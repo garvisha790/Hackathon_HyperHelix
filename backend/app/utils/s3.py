@@ -18,9 +18,10 @@ def _get_s3_client():
     return boto3.client(
         "s3",
         region_name=settings.aws_region,
+        endpoint_url=f"https://s3.{settings.aws_region}.amazonaws.com",
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
-        config=Config(signature_version="s3v4"),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 
 
@@ -53,6 +54,17 @@ def generate_presigned_download_url(s3_key: str, expiration: int = 3600) -> str:
         "get_object",
         Params={"Bucket": settings.s3_bucket_name, "Key": s3_key},
         ExpiresIn=expiration,
+    )
+
+
+def upload_to_s3(s3_key: str, file_content: bytes, content_type: str) -> None:
+    """Upload file bytes directly to S3."""
+    client = _get_s3_client()
+    client.put_object(
+        Bucket=settings.s3_bucket_name,
+        Key=s3_key,
+        Body=file_content,
+        ContentType=content_type,
     )
 
 

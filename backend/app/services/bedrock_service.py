@@ -1,9 +1,14 @@
 """AWS Bedrock (Claude) integration for invoice validation, categorization, and copilot."""
 import json
+import logging
 import boto3
+from botocore.config import Config
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+_bedrock_available = True
 
 
 def _get_bedrock_client():
@@ -12,10 +17,19 @@ def _get_bedrock_client():
         region_name=settings.bedrock_region,
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=30,
+            retries={"max_attempts": 1},
+        ),
     )
 
 
 def _invoke_claude(prompt: str, max_tokens: int = 4096) -> str:
+    global _bedrock_available
+    if not _bedrock_available:
+        raise RuntimeError("Bedrock previously failed with AccessDeniedException — skipping")
+
     client = _get_bedrock_client()
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
@@ -23,12 +37,17 @@ def _invoke_claude(prompt: str, max_tokens: int = 4096) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0,
     })
-    response = client.invoke_model(
-        modelId=settings.bedrock_model_id,
-        body=body,
-        contentType="application/json",
-        accept="application/json",
-    )
+    try:
+        response = client.invoke_model(
+            modelId=settings.bedrock_model_id,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+    except client.exceptions.AccessDeniedException as e:
+        logger.warning(f"Bedrock access denied, disabling for this session: {e}")
+        _bedrock_available = False
+        raise
     result = json.loads(response["body"].read())
     return result["content"][0]["text"]
 

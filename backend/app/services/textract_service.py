@@ -1,5 +1,6 @@
 """AWS Textract integration using AnalyzeExpense API optimized for invoices."""
 import boto3
+from botocore.config import Config
 from app.config import get_settings
 
 settings = get_settings()
@@ -11,6 +12,7 @@ def _get_textract_client():
         region_name=settings.textract_region,
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
+        config=Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 2}),
     )
 
 

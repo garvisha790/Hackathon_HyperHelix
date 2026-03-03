@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { formatDate, statusColor, cn } from "@/lib/utils";
-import { Upload, FileText, RefreshCw } from "lucide-react";
+import { Upload, FileText, RefreshCw, RotateCcw } from "lucide-react";
 
 export default function DocumentsPage() {
   const router = useRouter();
@@ -20,17 +20,23 @@ export default function DocumentsPage() {
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       setUploading(true);
-      const { data: uploadData } = await api.post("/documents", null, {
-        params: { file_name: file.name, content_type: file.type, document_type: "invoice" },
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("document_type", "invoice");
+      const { data } = await api.post("/documents/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 60000,
       });
-      await fetch(uploadData.upload_url, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      return uploadData;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       setUploading(false);
     },
-    onError: () => setUploading(false),
+    onError: (err) => {
+      console.error("Upload error:", err);
+      setUploading(false);
+    },
   });
 
   const handleDrop = (e: React.DragEvent) => {
@@ -43,6 +49,18 @@ export default function DocumentsPage() {
     const file = e.target.files?.[0];
     if (file) uploadMutation.mutate(file);
   };
+
+  const retryMutation = useMutation({
+    mutationFn: async (docId: string) => {
+      await api.post(`/documents/${docId}/process`, {}, { timeout: 120000 });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+    onError: (err) => {
+      console.error("Retry error:", err);
+    },
+  });
 
   const docs = data?.documents || [];
 
@@ -92,6 +110,7 @@ export default function DocumentsPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -109,6 +128,16 @@ export default function DocumentsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">{formatDate(doc.created_at)}</td>
+                  <td className="px-4 py-3">
+                    {["UPLOADED", "FAILED", "PROCESSING"].includes(doc.status) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); retryMutation.mutate(doc.id); }}
+                        className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Retry
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

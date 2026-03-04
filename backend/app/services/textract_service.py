@@ -1,9 +1,12 @@
 """AWS Textract integration using AnalyzeExpense API optimized for invoices."""
+import time
+import logging
 import boto3
 from botocore.config import Config
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _get_textract_client():
@@ -16,18 +19,67 @@ def _get_textract_client():
     )
 
 
-def analyze_expense(s3_key: str) -> dict:
-    """Call Textract AnalyzeExpense on an S3 object. Returns raw Textract response."""
+def _analyze_expense_async(s3_key: str) -> dict:
+    """Async Textract job for multi-page PDFs. Polls until complete (max 60s)."""
     client = _get_textract_client()
-    response = client.analyze_expense(
-        Document={
+    logger.info(f"[TEXTRACT] Starting async expense analysis for {s3_key}")
+
+    job = client.start_expense_analysis(
+        DocumentLocation={
             "S3Object": {
                 "Bucket": settings.s3_bucket_name,
                 "Name": s3_key,
             }
         }
     )
-    return response
+    job_id = job["JobId"]
+    logger.info(f"[TEXTRACT] Async job started: {job_id}")
+
+    # Poll with backoff — max 60 seconds
+    for attempt in range(12):
+        time.sleep(5)
+        result = client.get_expense_analysis(JobId=job_id)
+        status = result["JobStatus"]
+        logger.info(f"[TEXTRACT] Job {job_id} status: {status} (attempt {attempt + 1})")
+
+        if status == "SUCCEEDED":
+            # Merge all pages into a single response structure
+            all_docs = result.get("ExpenseDocuments", [])
+            # Fetch remaining pages if paginated
+            next_token = result.get("NextToken")
+            while next_token:
+                page = client.get_expense_analysis(JobId=job_id, NextToken=next_token)
+                all_docs.extend(page.get("ExpenseDocuments", []))
+                next_token = page.get("NextToken")
+            logger.info(f"[TEXTRACT] Async job complete — {len(all_docs)} expense documents")
+            return {"ExpenseDocuments": all_docs}
+
+        if status == "FAILED":
+            raise RuntimeError(f"Textract async job failed: {result.get('StatusMessage', 'unknown')}")
+
+    raise TimeoutError(f"Textract async job {job_id} did not complete within 60s")
+
+
+def analyze_expense(s3_key: str) -> dict:
+    """Call Textract AnalyzeExpense on an S3 object.
+
+    Tries the synchronous API first (fast, single-page).
+    Falls back to asynchronous API for multi-page PDFs.
+    """
+    client = _get_textract_client()
+    try:
+        response = client.analyze_expense(
+            Document={
+                "S3Object": {
+                    "Bucket": settings.s3_bucket_name,
+                    "Name": s3_key,
+                }
+            }
+        )
+        return response
+    except client.exceptions.UnsupportedDocumentException:
+        logger.warning(f"[TEXTRACT] Sync AnalyzeExpense rejected {s3_key} — trying async (multi-page PDF)")
+        return _analyze_expense_async(s3_key)
 
 
 def parse_textract_expense(raw_response: dict) -> dict:

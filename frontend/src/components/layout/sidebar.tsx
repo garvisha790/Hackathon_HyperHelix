@@ -4,10 +4,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FileText, BookOpen, Receipt,
-  BarChart3, MessageSquare, Settings, LogOut, Shield, ChevronLeft, ChevronRight
+  BarChart3, MessageSquare, Settings, LogOut, Shield, ChevronLeft, ChevronRight, User
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import Image from "next/image";
+import { UserAvatar } from "@/components/profile/user-avatar";
 
 const NAV_ITEMS = [
   { href: "/dashboard/overview", label: "Dashboard", icon: LayoutDashboard },
@@ -26,7 +27,7 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   const pathname = usePathname();
-  const { role, logout } = useAuth();
+  const { role, logout, userProfile } = useAuth();
 
   return (
     <aside
@@ -93,6 +94,50 @@ export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
         })}
       </nav>
 
+      {/* User Profile Section */}
+      <div className="border-t border-white/10 px-3 py-3">
+        <Link
+          href="/dashboard/settings/profile"
+          title={isCollapsed ? `${userProfile?.name || userProfile?.email}` : undefined}
+          className={cn(
+            "group flex w-full items-center rounded-md py-2.5 transition-all duration-150 hover:bg-white/10",
+            isCollapsed ? "justify-center px-0" : "gap-3 px-3"
+          )}
+        >
+          {isCollapsed ? (
+            <UserAvatar
+              name={userProfile?.name}
+              email={userProfile?.email}
+              size="sm"
+              showTooltip={true}
+            />
+          ) : (
+            <>
+              <UserAvatar
+                name={userProfile?.name}
+                email={userProfile?.email}
+                size="md"
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="truncate text-sm font-medium text-white">
+                  {userProfile?.name || "User"}
+                </div>
+                <div className="truncate text-xs text-white/60">
+                  {userProfile?.email}
+                </div>
+                <div className="mt-0.5">
+                  <span className="inline-flex items-center rounded-full bg-taxodo-secondary/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-taxodo-accent">
+                    {userProfile?.role || "user"}
+                  </span>
+                </div>
+              </div>
+              <User className="h-4 w-4 text-white/40 transition-colors group-hover:text-white/70 flex-shrink-0" />
+            </>
+          )}
+        </Link>
+      </div>
+
+      {/* Logout Button */}
       <div className="border-t border-white/10 p-3">
         <button
           onClick={logout}

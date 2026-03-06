@@ -7,10 +7,10 @@ _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 
 class Settings(BaseSettings):
     app_env: str = "development"
-    secret_key: str = "change-me-in-production"
+    secret_key: str
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/digitalca"
-    database_url_sync: str = "postgresql+psycopg://postgres:postgres@localhost:5432/digitalca"
+    database_url: str
+    database_url_sync: str
     redis_url: str = "redis://localhost:6379/0"
 
     aws_region: str = "ap-south-1"

@@ -22,11 +22,11 @@ export default function SignupPage() {
       const { data } = await api.post("/auth/signup", form);
       console.log("[SIGNUP] Signup API response received");
       login(data);
+      // Keep loading state true during navigation
     } catch (err: any) {
       console.error("[SIGNUP] Signup failed:", err);
       setError(err.response?.data?.detail || "Signup failed");
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only reset loading on error
     }
   };
 
@@ -138,8 +138,11 @@ export default function SignupPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-8 w-full rounded-md bg-taxodo-primary px-4 py-3 text-[15px] font-semibold text-white shadow-sm transition-all hover:bg-taxodo-primary-hover hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
+                className="mt-8 w-full rounded-md bg-taxodo-primary px-4 py-3 text-[15px] font-semibold text-white shadow-sm transition-all hover:bg-taxodo-primary-hover hover:shadow-md disabled:pointer-events-none disabled:opacity-50 flex items-center justify-center gap-2"
               >
+                {loading && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                )}
                 {loading ? "Creating account..." : "Create Account"}
               </button>
 

@@ -38,6 +38,8 @@ export default function LedgerPage() {
           />
         </div>
         <select
+          id="status-filter"
+          aria-label="Filter transactions by status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="taxodo-select"

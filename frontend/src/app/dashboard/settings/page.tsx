@@ -50,6 +50,7 @@ export default function SettingsPage() {
             <input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Acme Corporation"
               className="w-full rounded-lg border px-3.5 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
@@ -68,8 +69,9 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Business Type</label>
+              <label htmlFor="business-type" className="mb-1.5 block text-sm font-medium text-gray-700">Business Type</label>
               <select
+                id="business-type"
                 value={form.business_type}
                 onChange={(e) => setForm({ ...form, business_type: e.target.value })}
                 className="w-full rounded-lg border px-3.5 py-2.5 text-sm"
@@ -83,8 +85,9 @@ export default function SettingsPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">GST Return Frequency</label>
+              <label htmlFor="return-frequency" className="mb-1.5 block text-sm font-medium text-gray-700">GST Return Frequency</label>
               <select
+                id="return-frequency"
                 value={form.return_frequency}
                 onChange={(e) => setForm({ ...form, return_frequency: e.target.value })}
                 className="w-full rounded-lg border px-3.5 py-2.5 text-sm"

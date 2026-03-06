@@ -41,6 +41,21 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=401, detail=str(e))
 
+
+@router.post("/dev-login")
+async def dev_login(email: str, db: AsyncSession = Depends(get_db)):
+    """Development-only login endpoint that bypasses Cognito. Use for local testing."""
+    if settings.app_env != "development":
+        raise HTTPException(status_code=403, detail="Dev login only available in development mode")
+    try:
+        print(f"[AUTH/DEV-LOGIN] Dev login for: {email}")
+        result = await auth_service.dev_login(db, email)
+        print(f"[AUTH/DEV-LOGIN] Dev login successful for: {email}")
+        return result
+    except Exception as e:
+        print(f"[AUTH/DEV-LOGIN] Dev login failed: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+
 @router.get("/me")
 async def get_me(current_user: CurrentUser):
     try:

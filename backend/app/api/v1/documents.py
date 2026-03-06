@@ -140,7 +140,7 @@ async def trigger_processing(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
-    if doc.status not in ("UPLOADED", "FAILED", "PROCESSING"):
+    if doc.status not in ("UPLOADED", "FAILED", "PROCESSING", "DONE"):
         raise HTTPException(400, f"Document already in status {doc.status}")
 
     _log(f"[PROCESS] Running pipeline for {document_id} ({doc.file_name})")

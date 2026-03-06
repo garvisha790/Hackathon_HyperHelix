@@ -20,7 +20,10 @@ from app.utils.gst_validator import (
     validate_gstin, extract_state_from_gstin, is_interstate,
     validate_total_consistency, validate_gst_split,
 )
+from app.services.posting_engine import post_invoice
+from app.services.tax_service import mark_gst_stale
 from app.utils.duplicate_detector import compute_duplicate_hash, check_duplicate
+
 
 logger = logging.getLogger(__name__)
 _LOG_FILE = Path(__file__).resolve().parent.parent.parent / "pipeline.log"
@@ -187,7 +190,26 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             db.add(canonical)
         await db.flush()
 
+        # Step 4: Post to Ledger (create LedgerTransaction + JournalLines)
+        _log("[PIPELINE]   4/4 Posting to ledger...")
+        try:
+            # Get the canonical invoice we just created/updated
+            from sqlalchemy import select as sa_select2
+            ci_result = await db.execute(
+                sa_select2(CanonicalInvoice).where(CanonicalInvoice.document_id == doc.id)
+            )
+            ci = ci_result.scalar_one_or_none()
+            if ci:
+                ledger_txn = await post_invoice(db, ci, tenant_id)
+                await mark_gst_stale(db, tenant_id, ci.invoice_date)
+                _log(f"[PIPELINE]   4/4 Ledger posted: txn={ledger_txn.id}, category={ledger_txn.assigned_category}")
+            else:
+                _log("[PIPELINE]   4/4 No canonical invoice found to post (duplicate skipped)")
+        except Exception as post_err:
+            _log(f"[PIPELINE]   4/4 Ledger posting failed (non-fatal): {type(post_err).__name__}: {post_err}")
+
         await _set_status(db, doc, "DONE")
+
 
         _log(
             f"[PIPELINE] ✓ Complete — {doc.file_name} | "

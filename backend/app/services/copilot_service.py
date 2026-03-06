@@ -41,7 +41,8 @@ async def handle_copilot_query(
     else:
         context = await _get_general_context(db, tenant_id)
 
-    if not context or context.strip() == "No data found.":
+    # For data-driven queries, guard against empty context before calling the AI
+    if intent in ("sql_aggregate", "document_lookup") and (not context or context.strip() == "No data found."):
         return {
             "answer": "I don't have enough data to answer this question. Try uploading more documents or ask about a different period.",
             "intent": intent,

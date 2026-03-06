@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Optional, Any, List
 from datetime import date, datetime
 
 
@@ -59,3 +59,26 @@ class ValidationResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+class CanonicalInvoiceUpdateRequest(BaseModel):
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    vendor_name: Optional[str] = None
+    vendor_gstin: Optional[str] = None
+    buyer_gstin: Optional[str] = None
+    place_of_supply: Optional[str] = None
+    subtotal: Optional[float] = None
+    cgst: Optional[float] = None
+    sgst: Optional[float] = None
+    igst: Optional[float] = None
+    total: Optional[float] = None
+
+class FieldSuggestion(BaseModel):
+    field_name: str
+    old_value: Any
+    suggested_value: Any
+    reasoning: str
+
+class AISuggestionResponse(BaseModel):
+    suggestions: List[FieldSuggestion]
+    summary_of_analysis: str

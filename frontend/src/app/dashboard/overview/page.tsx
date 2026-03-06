@@ -15,55 +15,57 @@ export default function OverviewPage() {
   });
 
   if (isLoading) {
-    return <div className="flex h-64 items-center justify-center text-gray-500">Loading dashboard...</div>;
+    return <div className="flex h-64 items-center justify-center text-taxodo-muted">Loading dashboard...</div>;
   }
 
   const d = data || {};
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-gray-500">Financial overview for your business</p>
+    <div className="space-y-6 page-enter">
+      <div className="section-intro">
+        <div>
+          <h1 className="text-2xl font-bold text-taxodo-ink">Dashboard</h1>
+          <p className="mt-1 text-[15px] text-taxodo-muted">Financial overview for your business</p>
+        </div>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard icon={FileText} label="Total Documents" value={d.total_documents || 0} color="blue" />
-        <KPICard icon={TrendingUp} label="Total Revenue" value={formatCurrency(d.total_revenue || 0)} color="green" />
-        <KPICard icon={BarChart3} label="Total Expenses" value={formatCurrency(d.total_expenses || 0)} color="red" />
-        <KPICard icon={Receipt} label="GST Liability" value={formatCurrency(d.gst_liability || 0)} color="amber" />
+        <KPICard icon={FileText} label="Total Documents" value={d.total_documents || 0} color="primary" />
+        <KPICard icon={TrendingUp} label="Total Revenue" value={formatCurrency(d.total_revenue || 0)} color="success" />
+        <KPICard icon={BarChart3} label="Total Expenses" value={formatCurrency(d.total_expenses || 0)} color="danger" />
+        <KPICard icon={Receipt} label="GST Liability" value={formatCurrency(d.gst_liability || 0)} color="warning" />
       </div>
 
       {/* Pipeline Status */}
       {d.pipeline && (
-        <div className="rounded-xl border bg-white p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Document Pipeline</h2>
+        <div className="taxodo-card taxodo-card-pad">
+          <h2 className="section-kicker mb-4">Document Pipeline</h2>
           <div className="grid grid-cols-4 gap-4">
-            <PipelineStat label="Uploaded" count={d.pipeline.uploaded} color="bg-gray-200" />
-            <PipelineStat label="Processing" count={d.pipeline.processing} color="bg-yellow-200" />
-            <PipelineStat label="Completed" count={d.pipeline.done} color="bg-green-200" />
-            <PipelineStat label="Failed" count={d.pipeline.failed} color="bg-red-200" />
+            <PipelineStat label="Uploaded" count={d.pipeline.uploaded} bg="bg-taxodo-subtle" text="text-taxodo-ink" />
+            <PipelineStat label="Processing" count={d.pipeline.processing} bg="bg-taxodo-cta/20" text="text-taxodo-cta" />
+            <PipelineStat label="Completed" count={d.pipeline.done} bg="bg-taxodo-success/20" text="text-taxodo-success" />
+            <PipelineStat label="Failed" count={d.pipeline.failed} bg="bg-taxodo-danger/10" text="text-taxodo-danger" />
           </div>
         </div>
       )}
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border bg-white p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Profit & Loss</h2>
+        <div className="taxodo-card taxodo-card-pad">
+          <h2 className="section-kicker mb-4">Profit & Loss</h2>
           <PnLChart data={d.pnl || []} />
         </div>
-        <div className="rounded-xl border bg-white p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Expenses by Category</h2>
+        <div className="taxodo-card taxodo-card-pad">
+          <h2 className="section-kicker mb-4">Expenses by Category</h2>
           <ExpensePie data={d.expenses_by_category || []} />
         </div>
-        <div className="rounded-xl border bg-white p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">GST Tracker</h2>
+        <div className="taxodo-card taxodo-card-pad">
+          <h2 className="section-kicker mb-4">GST Tracker</h2>
           <GSTTracker data={d.gst_tracker || []} />
         </div>
-        <div className="rounded-xl border bg-white p-6">
-          <h2 className="mb-4 text-sm font-semibold text-gray-700">Cash Flow</h2>
+        <div className="taxodo-card taxodo-card-pad">
+          <h2 className="section-kicker mb-4">Cash Flow</h2>
           <CashflowChart data={d.cashflow || []} />
         </div>
       </div>
@@ -73,33 +75,34 @@ export default function OverviewPage() {
 
 function KPICard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
   const colors: Record<string, string> = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-green-50 text-green-600",
-    red: "bg-red-50 text-red-600",
-    amber: "bg-amber-50 text-amber-600",
+    primary: "bg-taxodo-primary/10 text-taxodo-primary",
+    success: "bg-taxodo-success/10 text-taxodo-success",
+    danger: "bg-taxodo-danger/10 text-taxodo-danger",
+    warning: "bg-taxodo-warning/20 text-taxodo-warning",
   };
+
   return (
-    <div className="rounded-xl border bg-white p-5">
-      <div className="flex items-center gap-3">
-        <div className={`rounded-lg p-2 ${colors[color]}`}>
-          <Icon className="h-5 w-5" />
+    <div className="taxodo-card p-5 transition-shadow hover:shadow-modal">
+      <div className="flex items-center gap-4">
+        <div className={`flex h-12 w-12 items-center justify-center rounded-md ${colors[color]}`}>
+          <Icon className="h-6 w-6" />
         </div>
         <div>
-          <p className="text-xs font-medium text-gray-500">{label}</p>
-          <p className="text-lg font-bold text-gray-900">{value}</p>
+          <p className="text-[13px] font-semibold tracking-wide text-taxodo-muted">{label}</p>
+          <p className="numeric text-2xl font-bold text-taxodo-ink">{value}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function PipelineStat({ label, count, color }: { label: string; count: number; color: string }) {
+function PipelineStat({ label, count, bg, text }: { label: string; count: number; bg: string; text: string }) {
   return (
     <div className="text-center">
-      <div className={`mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full ${color}`}>
-        <span className="text-lg font-bold">{count}</span>
+      <div className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full ${bg}`}>
+        <span className={`text-xl font-bold ${text}`}>{count}</span>
       </div>
-      <p className="text-xs font-medium text-gray-600">{label}</p>
+      <p className="text-[13px] font-semibold text-taxodo-muted">{label}</p>
     </div>
   );
 }

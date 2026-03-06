@@ -19,10 +19,12 @@ class Settings(BaseSettings):
     s3_bucket_name: str = "digitalca-documents"
     textract_region: str = "ap-south-1"
     bedrock_region: str = "us-east-1"
-    bedrock_model_id: str = "anthropic.claude-3-sonnet-20240229-v1:0"
+    bedrock_model_id: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    anthropic_api_key: str = ""
 
     cognito_user_pool_id: str = ""
     cognito_app_client_id: str = ""
+    cognito_app_client_secret: str = ""
     cognito_region: str = "ap-south-1"
 
     cors_origins: str = "http://localhost:3000"
@@ -32,6 +34,13 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",")]
+
+    @property
+    def cognito_effective_region(self) -> str:
+        """Use the region embedded in the pool id when available."""
+        if self.cognito_user_pool_id and "_" in self.cognito_user_pool_id:
+            return self.cognito_user_pool_id.split("_", 1)[0]
+        return self.cognito_region
 
 
 @lru_cache

@@ -65,13 +65,13 @@ export default function DocumentsPage() {
   const docs = data?.documents || [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 page-enter">
+      <div className="section-intro">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-          <p className="mt-1 text-sm text-gray-500">Upload invoices, credit notes, and receipts</p>
+          <h1 className="text-2xl font-bold text-taxodo-ink">Documents</h1>
+          <p className="section-subtitle">Upload invoices, credit notes, and receipts</p>
         </div>
-        <button onClick={() => refetch()} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50">
+        <button onClick={() => refetch()} className="flex items-center gap-2 rounded-md border border-taxodo-border bg-taxodo-surface px-3 py-2 text-[13px] font-semibold text-taxodo-ink transition-colors hover:bg-taxodo-subtle">
           <RefreshCw className="h-4 w-4" /> Refresh
         </button>
       </div>
@@ -80,14 +80,14 @@ export default function DocumentsPage() {
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white p-10 transition-colors hover:border-brand-400"
+        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#D5DEE3] bg-taxodo-surface p-10 transition-colors hover:border-taxodo-secondary hover:bg-taxodo-subtle"
       >
-        <Upload className="mb-3 h-10 w-10 text-gray-400" />
-        <p className="text-sm font-medium text-gray-700">
+        <Upload className="mb-3 h-10 w-10 text-taxodo-muted opacity-50" />
+        <p className="text-[15px] font-medium text-taxodo-ink">
           {uploading ? "Uploading & processing..." : "Drag & drop a file here, or click to browse"}
         </p>
-        <p className="mt-1 text-xs text-gray-400">Supports PDF, JPEG, PNG</p>
-        <label className="mt-4 cursor-pointer rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+        <p className="mt-1 text-[13px] text-taxodo-muted">Supports PDF, JPEG, PNG</p>
+        <label className="mt-4 cursor-pointer rounded-sm bg-taxodo-primary px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-taxodo-primary-hover active:bg-taxodo-primary-active">
           Select File
           <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileSelect} className="hidden" />
         </label>
@@ -95,44 +95,44 @@ export default function DocumentsPage() {
 
       {/* Document List */}
       {isLoading ? (
-        <div className="text-center text-sm text-gray-500">Loading...</div>
+        <div className="text-center text-[15px] text-taxodo-muted">Loading...</div>
       ) : docs.length === 0 ? (
-        <div className="rounded-xl border bg-white p-12 text-center">
-          <FileText className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p className="text-sm text-gray-500">No documents uploaded yet</p>
+        <div className="taxodo-card p-12 text-center">
+          <FileText className="mx-auto mb-3 h-12 w-12 text-taxodo-muted opacity-30" />
+          <p className="text-[15px] text-taxodo-muted">No documents uploaded yet</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-white">
-          <table className="w-full">
-            <thead className="border-b bg-gray-50">
+        <div className="table-wrap">
+          <table className="table-base table-zebra">
+            <thead className="table-head">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">File Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Actions</th>
+                <th className="table-th text-left">File Name</th>
+                <th className="table-th text-left">Type</th>
+                <th className="table-th text-left">Status</th>
+                <th className="table-th text-left">Date</th>
+                <th className="table-th text-left">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-taxodo-border">
               {docs.map((doc: any) => (
                 <tr
                   key={doc.id}
                   onClick={() => router.push(`/dashboard/documents/${doc.id}`)}
-                  className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="cursor-pointer transition-colors hover:bg-taxodo-subtle"
                 >
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{doc.file_name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 capitalize">{doc.document_type.replace("_", " ")}</td>
-                  <td className="px-4 py-3">
-                    <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-xs font-medium", statusColor(doc.status))}>
+                  <td className="table-td font-medium">{doc.file_name}</td>
+                  <td className="table-td capitalize text-taxodo-muted">{doc.document_type.replace("_", " ")}</td>
+                  <td className="table-td">
+                    <span className={cn("inline-block rounded-sm px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide", statusColor(doc.status))}>
                       {doc.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{formatDate(doc.created_at)}</td>
-                  <td className="px-4 py-3">
+                  <td className="table-td text-taxodo-muted">{formatDate(doc.created_at)}</td>
+                  <td className="table-td">
                     {["UPLOADED", "FAILED", "PROCESSING"].includes(doc.status) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); retryMutation.mutate(doc.id); }}
-                        className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                        className="flex items-center gap-1 rounded-md bg-taxodo-warning/10 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-taxodo-warning hover:bg-taxodo-warning/20 transition-colors"
                       >
                         <RotateCcw className="h-3 w-3" /> Retry
                       </button>

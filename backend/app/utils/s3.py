@@ -1,6 +1,7 @@
 import uuid
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.config import get_settings
 
@@ -13,15 +14,50 @@ ALLOWED_CONTENT_TYPES = {
     "image/png": "png",
 }
 
+_s3_region_cache: str | None = None
+
+
+def _discover_bucket_region() -> str:
+    """
+    Discover the real bucket region. Start with the configured aws_region and
+    verify it via head_bucket. If a redirect is returned, use that region instead.
+    """
+    global _s3_region_cache
+    if _s3_region_cache:
+        return _s3_region_cache
+
+    configured_region = settings.aws_region  # e.g. ap-south-1
+    try:
+        probe = boto3.client(
+            "s3",
+            region_name=configured_region,
+            aws_access_key_id=settings.aws_access_key_id or None,
+            aws_secret_access_key=settings.aws_secret_access_key or None,
+            config=Config(signature_version="s3v4"),
+        )
+        probe.head_bucket(Bucket=settings.s3_bucket_name)
+        # head_bucket succeeded with configured region — use it
+        _s3_region_cache = configured_region
+    except ClientError as e:
+        # Extract actual bucket region from redirect header
+        bucket_region = e.response.get("ResponseMetadata", {}).get(
+            "HTTPHeaders", {}
+        ).get("x-amz-bucket-region")
+        _s3_region_cache = bucket_region or configured_region
+    except Exception:
+        _s3_region_cache = configured_region
+
+    return _s3_region_cache
+
 
 def _get_s3_client():
+    region = _discover_bucket_region()
     return boto3.client(
         "s3",
-        region_name=settings.aws_region,
-        endpoint_url=f"https://s3.{settings.aws_region}.amazonaws.com",
+        region_name=region,
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=Config(signature_version="s3v4"),
     )
 
 

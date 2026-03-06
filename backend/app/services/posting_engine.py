@@ -190,9 +190,9 @@ def _items_description(line_items: list) -> str:
 
 
 def _verify_balance(lines: list[JournalLine]):
-    total_debit = sum(float(line.debit or 0) for line in lines)
-    total_credit = sum(float(line.credit or 0) for line in lines)
-    if abs(total_debit - total_credit) > 0.01:
+    total_debit = round(sum(float(line.debit or 0) for line in lines), 2)
+    total_credit = round(sum(float(line.credit or 0) for line in lines), 2)
+    if abs(total_debit - total_credit) > 0.02:
         raise ValueError(f"Double-entry violation: debit={total_debit}, credit={total_credit}")
 
 

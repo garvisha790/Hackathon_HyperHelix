@@ -18,27 +18,29 @@ export default function LedgerPage() {
   const txns = data?.transactions || [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Ledger</h1>
-        <p className="mt-1 text-sm text-gray-500">Double-entry journal transactions</p>
+    <div className="space-y-6 page-enter">
+      <div className="section-intro">
+        <div>
+          <h1 className="text-2xl font-bold text-taxodo-ink">Ledger</h1>
+          <p className="section-subtitle">Double-entry journal transactions</p>
+        </div>
       </div>
 
       {/* Filters */}
       <div className="flex gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-taxodo-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search transactions..."
-            className="w-full rounded-lg border pl-10 pr-4 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            className="taxodo-input pl-10"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg border px-3 py-2.5 text-sm text-gray-700"
+          className="taxodo-select"
         >
           <option value="">All Statuses</option>
           <option value="AUTO_POSTED">Auto Posted</option>
@@ -48,46 +50,48 @@ export default function LedgerPage() {
       </div>
 
       {isLoading ? (
-        <div className="text-center text-sm text-gray-500">Loading...</div>
+        <div className="text-center text-[15px] text-taxodo-muted">Loading...</div>
       ) : txns.length === 0 ? (
-        <div className="rounded-xl border bg-white p-12 text-center">
-          <BookOpen className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-          <p className="text-sm text-gray-500">No transactions yet. Approve invoices to generate ledger entries.</p>
+        <div className="taxodo-card p-12 text-center">
+          <BookOpen className="mx-auto mb-3 h-12 w-12 text-taxodo-muted opacity-30" />
+          <p className="text-[15px] text-taxodo-muted">No transactions yet. Approve invoices to generate ledger entries.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {txns.map((txn: any) => (
-            <div key={txn.id} className="rounded-xl border bg-white p-5">
-              <div className="flex items-start justify-between mb-3">
+            <div key={txn.id} className="taxodo-card p-5">
+              <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{txn.description || "Transaction"}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">
+                  <p className="text-[15px] font-semibold text-taxodo-ink">{txn.description || "Transaction"}</p>
+                  <p className="mt-1 text-[13px] text-taxodo-muted">
                     {formatDate(txn.transaction_date)} &middot; v{txn.version}
-                    {txn.assigned_category && <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs">{txn.assigned_category}</span>}
+                    {txn.assigned_category && <span className="ml-2 rounded-sm bg-taxodo-subtle px-1.5 py-0.5 text-[12px]">{txn.assigned_category}</span>}
                   </p>
                 </div>
-                <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", statusColor(txn.status))}>{txn.status}</span>
+                <span className={cn("inline-block rounded-sm px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide", statusColor(txn.status))}>{txn.status}</span>
               </div>
 
               {/* Journal Lines */}
-              <table className="w-full text-sm">
-                <thead className="border-b text-xs text-gray-500">
-                  <tr>
-                    <th className="py-1.5 text-left">Account</th>
-                    <th className="py-1.5 text-right w-32">Debit (₹)</th>
-                    <th className="py-1.5 text-right w-32">Credit (₹)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {(txn.journal_lines || []).map((jl: any) => (
-                    <tr key={jl.id}>
-                      <td className="py-1.5 text-gray-700">{jl.account_name || jl.account_code || "—"}</td>
-                      <td className="py-1.5 text-right font-mono">{jl.debit > 0 ? formatCurrency(jl.debit) : ""}</td>
-                      <td className="py-1.5 text-right font-mono">{jl.credit > 0 ? formatCurrency(jl.credit) : ""}</td>
+              <div className="table-wrap">
+                <table className="table-base table-zebra">
+                  <thead className="table-head">
+                    <tr>
+                      <th className="table-th text-left">Account</th>
+                      <th className="table-th text-right w-32">Debit (₹)</th>
+                      <th className="table-th text-right w-32">Credit (₹)</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-taxodo-border">
+                    {(txn.journal_lines || []).map((jl: any) => (
+                      <tr key={jl.id}>
+                        <td className="table-td text-taxodo-ink">{jl.account_name || jl.account_code || "—"}</td>
+                        <td className="table-td numeric text-right font-medium">{jl.debit > 0 ? formatCurrency(jl.debit) : ""}</td>
+                        <td className="table-td numeric text-right font-medium">{jl.credit > 0 ? formatCurrency(jl.credit) : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ))}
         </div>

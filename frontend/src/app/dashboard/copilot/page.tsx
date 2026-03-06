@@ -53,13 +53,13 @@ export default function CopilotPage() {
       <div className="flex-1 overflow-y-auto rounded-xl border bg-white p-4 space-y-4">
         {messages.map((msg, i) => (
           <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
-            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${msg.role === "user" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-600"}`}>
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${msg.role === "user" ? "bg-taxodo-primary text-white" : "bg-gray-100 text-gray-600"}`}>
               {msg.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
             </div>
-            <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-800"}`}>
+            <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-taxodo-primary text-white" : "bg-gray-100 text-gray-800"}`}>
               <p className="whitespace-pre-wrap">{msg.content}</p>
               {msg.intent && (
-                <p className={`mt-2 text-xs ${msg.role === "user" ? "text-brand-200" : "text-gray-400"}`}>
+                <p className={`mt-2 text-xs ${msg.role === "user" ? "text-taxodo-accent" : "text-gray-400"}`}>
                   Query type: {msg.intent}
                 </p>
               )}
@@ -84,12 +84,12 @@ export default function CopilotPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
           placeholder="Ask about your finances..."
-          className="flex-1 rounded-xl border px-4 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+          className="flex-1 rounded-xl border px-4 py-3 text-sm focus:border-taxodo-secondary focus:outline-none focus:ring-2 focus:ring-taxodo-secondary/20"
         />
         <button
           onClick={handleSend}
           disabled={askMutation.isPending || !input.trim()}
-          className="rounded-xl bg-brand-600 px-5 py-3 text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          className="rounded-xl bg-taxodo-primary px-5 py-3 text-white hover:bg-taxodo-primary-hover disabled:opacity-50 transition-colors"
         >
           <Send className="h-5 w-5" />
         </button>

@@ -231,25 +231,70 @@ def parse_textract_expense(raw_response: dict) -> dict:
         for line_item_group in doc.get("LineItemGroups", []):
             for line_item in line_item_group.get("LineItems", []):
                 item = {"description": "", "qty": 1, "rate": 0, "taxable_value": 0, "hsn_sac": None}
+                field_types_found = []
+                
                 for expense_field in line_item.get("LineItemExpenseFields", []):
                     ft = expense_field.get("Type", {}).get("Text", "").upper()
                     val = expense_field.get("ValueDetection", {}).get("Text", "")
+                    field_types_found.append(ft)
 
-                    if ft in ("ITEM", "DESCRIPTION", "PRODUCT_CODE"):
+                    # HSN/SAC field extraction
+                    if ft in ("HSN", "HSN_CODE", "HSN/SAC", "SAC", "SAC_CODE"):
+                        hsn_match = re.search(r'\d+', val)
+                        if hsn_match:
+                            item["hsn_sac"] = hsn_match.group()
+                    
+                    # PRODUCT_CODE smart routing: if numeric (4-8 digits) → HSN, else → description
+                    elif ft == "PRODUCT_CODE":
+                        if val and re.match(r'^\d{4,8}$', val.strip()):
+                            item["hsn_sac"] = val.strip()
+                        else:
+                            item["description"] = val
+                    
+                    # Description fields
+                    elif ft in ("ITEM", "DESCRIPTION"):
                         item["description"] = val
-                    elif ft == "QUANTITY":
+                    
+                    # Quantity field variants
+                    elif ft in ("QUANTITY", "QTY", "QTY."):
                         try:
-                            item["qty"] = float(val.replace(",", ""))
+                            qty_str = val.replace(",", "")
+                            qty_match = re.search(r'[\d.]+', qty_str)
+                            if qty_match:
+                                qty_val = float(qty_match.group())
+                                # Exclude GST rates (5, 12, 18, 28) from quantity
+                                if qty_val not in (5.0, 12.0, 18.0, 28.0) and qty_val < 100:
+                                    item["qty"] = qty_val
                         except (ValueError, TypeError):
                             pass
+                    
+                    # Price fields
                     elif ft in ("UNIT_PRICE", "PRICE"):
                         rate = _parse_currency(val)
                         if rate > 0:
                             item["rate"] = rate
+                    
+                    # Total fields
                     elif ft == "EXPENSE_ROW_TOTAL":
                         taxable = _parse_currency(val)
                         if taxable > 0:
                             item["taxable_value"] = taxable
+                    
+                    # OTHER field inference
+                    elif ft == "OTHER" and val:
+                        # Check if it's a 4-8 digit number (likely HSN)
+                        if not item["hsn_sac"] and re.match(r'^\d{4,8}$', val.strip()):
+                            item["hsn_sac"] = val.strip()
+                        # Check if it's quantity (e.g., "5 Nos", "2 Kgs")
+                        elif re.search(r'\d+\s*(nos|kgs|units|pcs|items)', val, re.IGNORECASE):
+                            qty_match = re.search(r'(\d+)', val)
+                            if qty_match:
+                                try:
+                                    qty_val = float(qty_match.group(1))
+                                    if qty_val not in (5.0, 12.0, 18.0, 28.0) and qty_val < 100:
+                                        item["qty"] = qty_val
+                                except (ValueError, TypeError):
+                                    pass
 
                 if item["description"] or item["taxable_value"]:
                     structured["line_items"].append(item)

@@ -21,7 +21,7 @@ export default function SignupPage() {
       console.log("[SIGNUP] Attempting signup for:", form.email);
       const { data } = await api.post("/auth/signup", form);
       console.log("[SIGNUP] Signup API response received");
-      login(data);
+      await login(data);
       // Keep loading state true during navigation
     } catch (err: any) {
       console.error("[SIGNUP] Signup failed:", err);

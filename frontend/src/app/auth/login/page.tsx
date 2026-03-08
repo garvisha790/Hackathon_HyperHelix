@@ -22,7 +22,7 @@ export default function LoginPage() {
       console.log("[LOGIN] Attempting login for:", email);
       const { data } = await api.post("/auth/login", { email, password });
       console.log("[LOGIN] Login API response received");
-      login(data);
+      await login(data);
       // Keep loading state true during navigation
     } catch (err: any) {
       console.error("[LOGIN] Login failed:", err);

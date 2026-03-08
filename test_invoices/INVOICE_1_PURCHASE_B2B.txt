@@ -1,0 +1,56 @@
+═══════════════════════════════════════════════════════════════
+                      TAX INVOICE
+═══════════════════════════════════════════════════════════════
+
+Invoice No: INV-2026-001                    Date: 01/03/2026
+GSTIN: 29AAACF0000A1Z5                      PAN: AAACF0000A
+
+From:
+ABC SUPPLIERS PVT LTD
+123 MG Road, Koramangala
+Bangalore, Karnataka - 560034
+Phone: +91 9876543210
+Email: accounts@abcsuppliers.com
+
+To:
+DEMO MSME PVT LTD
+GSTIN: 29ABCDE1234F1Z5
+456 Brigade Road, Richmond Town
+Bangalore, Karnataka - 560025
+Phone: +91 9988776655
+
+═══════════════════════════════════════════════════════════════
+BILL OF SUPPLY
+═══════════════════════════════════════════════════════════════
+
+S.No  Description              HSN      Qty    Rate       Amount
+───────────────────────────────────────────────────────────────
+1     Office Stationery       48202     50    500.00     25,000
+2     Printer Cartridges      84439     10    2,500.00   25,000
+───────────────────────────────────────────────────────────────
+
+                                       Subtotal:    ₹ 50,000.00
+                                       CGST @ 9%:   ₹  4,500.00
+                                       SGST @ 9%:   ₹  4,500.00
+                                       ───────────────────────
+                                       GRAND TOTAL: ₹ 59,000.00
+
+Amount in Words: Fifty Nine Thousand Rupees Only
+
+───────────────────────────────────────────────────────────────
+PAYMENT TERMS
+───────────────────────────────────────────────────────────────
+Due Date: 31/03/2026 (30 days from invoice date)
+
+Bank Details:
+Bank Name: ICICI Bank
+Account No: 123456789012
+IFSC Code: ICIC0001234
+Branch: MG Road, Bangalore
+
+───────────────────────────────────────────────────────────────
+                    Authorized Signatory
+                    ABC SUPPLIERS PVT LTD
+
+This is a computer-generated invoice and does not require signature
+═══════════════════════════════════════════════════════════════

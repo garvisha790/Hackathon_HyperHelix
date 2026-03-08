@@ -56,6 +56,7 @@ class ValidationResponse(BaseModel):
     warnings_count: int
     errors_count: int
     validated_by: str
+    ai_suggestions: Optional[dict] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

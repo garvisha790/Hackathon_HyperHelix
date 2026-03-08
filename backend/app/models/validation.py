@@ -23,6 +23,7 @@ class Validation(Base):
     warnings_count: Mapped[int] = mapped_column(Integer, default=0)
     errors_count: Mapped[int] = mapped_column(Integer, default=0)
     validated_by: Mapped[str] = mapped_column(String(50), default="bedrock")
+    ai_suggestions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

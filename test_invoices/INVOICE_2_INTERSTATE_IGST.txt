@@ -1,0 +1,58 @@
+═══════════════════════════════════════════════════════════════
+                      TAX INVOICE
+═══════════════════════════════════════════════════════════════
+
+Invoice No: KA-2026-4567                    Date: 05/03/2026
+GSTIN: 29AABCT1234A1Z5                      PAN: AABCT1234A
+
+From:
+XYZ TRADERS
+789 Residency Road
+Bangalore, Karnataka - 560025
+Phone: +91 8877665544
+Email: sales@xyztraders.com
+
+To:
+DEMO MSME PVT LTD
+GSTIN: 27ABCDE1234F1Z5  (Maharashtra)
+456 Brigade Road, Richmond Town
+Bangalore, Karnataka - 560025
+Phone: +91 9988776655
+
+═══════════════════════════════════════════════════════════════
+INTERSTATE SUPPLY - IGST APPLICABLE
+═══════════════════════════════════════════════════════════════
+
+S.No  Description              HSN      Qty    Rate       Amount
+───────────────────────────────────────────────────────────────
+1     Laptop Computers        84713      5   15,000.00   75,000
+2     Computer Accessories    84733     10    2,500.00   25,000
+───────────────────────────────────────────────────────────────
+
+                                       Subtotal:    ₹1,00,000.00
+                                       IGST @ 18%:  ₹  18,000.00
+                                       ───────────────────────
+                                       GRAND TOTAL: ₹1,18,000.00
+
+Amount in Words: One Lakh Eighteen Thousand Rupees Only
+
+Note: Interstate supply from Karnataka to Maharashtra
+IGST applicable as per GST Act Section 5
+
+───────────────────────────────────────────────────────────────
+PAYMENT TERMS
+───────────────────────────────────────────────────────────────
+Due Date: 20/03/2026 (15 days from invoice date)
+Payment Mode: NEFT/RTGS
+
+Bank Details:
+Bank Name: HDFC Bank
+Account No: 987654321098
+IFSC Code: HDFC0000123
+Branch: Residency Road, Bangalore
+
+───────────────────────────────────────────────────────────────
+                    For XYZ TRADERS
+
+                    Authorized Signatory
+═══════════════════════════════════════════════════════════════

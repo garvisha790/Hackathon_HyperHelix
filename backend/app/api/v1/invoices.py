@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
@@ -9,7 +10,7 @@ from app.models.document import Document
 from app.schemas.invoice import CanonicalInvoiceResponse, ValidationResponse, ValidationFieldResult, CanonicalInvoiceUpdateRequest, AISuggestionResponse
 from app.services.posting_engine import post_invoice
 from app.services.tax_service import mark_gst_stale
-from app.services.bedrock_service import validate_invoice_fields, generate_ai_review
+from app.services.bedrock_service import validate_invoice_fields, generate_ai_review, generate_approval_error_review
 from app.middleware.audit import log_action
 from app.utils.s3 import generate_presigned_download_url
 
@@ -18,6 +19,7 @@ router = APIRouter()
 
 @router.get("/{document_id}", response_model=CanonicalInvoiceResponse)
 async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB = None):
+    # First, try to find invoice directly linked to this document
     result = await db.execute(
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
@@ -26,6 +28,54 @@ async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB
         )
     )
     invoice = result.scalar_one_or_none()
+    
+    # If not found, this might be a duplicate document - find the original invoice
+    if not invoice:
+        # Get the document to check its extraction data
+        doc_result = await db.execute(
+            select(Document).where(
+                Document.id == document_id,
+                Document.tenant_id == tenant_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        doc = doc_result.scalar_one_or_none()
+        
+        if doc and doc.status == "DONE":
+            # Get the extraction to compute duplicate hash
+            from app.models.extraction import Extraction
+            from app.utils.duplicate_detector import compute_duplicate_hash
+            
+            extraction_result = await db.execute(
+                select(Extraction).where(
+                    Extraction.document_id == document_id,
+                    Extraction.tenant_id == tenant_id,
+                ).order_by(Extraction.created_at.desc()).limit(1)
+            )
+            extraction = extraction_result.scalar_one_or_none()
+            
+            if extraction:
+                structured = extraction.structured_data
+                # Compute the duplicate hash
+                dup_hash = compute_duplicate_hash(
+                    tenant_id,
+                    structured.get("vendor_gstin"),
+                    structured.get("invoice_number", ""),
+                    str(structured.get("invoice_date", "")),
+                    structured.get("total", 0),
+                )
+                
+                # Find the original invoice with this hash
+                original_result = await db.execute(
+                    select(CanonicalInvoice).where(
+                        CanonicalInvoice.tenant_id == tenant_id,
+                        CanonicalInvoice.duplicate_hash == dup_hash,
+                        CanonicalInvoice.is_duplicate.is_(False),
+                        CanonicalInvoice.deleted_at.is_(None),
+                    )
+                )
+                invoice = original_result.scalar_one_or_none()
+    
     if not invoice:
         raise HTTPException(404, "Invoice not found for this document")
 
@@ -45,6 +95,7 @@ async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB
 
 @router.get("/{document_id}/validation", response_model=ValidationResponse)
 async def get_validation(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB = None):
+    # First try to find validation for this document
     result = await db.execute(
         select(Validation).where(
             Validation.document_id == document_id,
@@ -52,6 +103,62 @@ async def get_validation(document_id: uuid.UUID, tenant_id: TenantId = None, db:
         ).order_by(Validation.created_at.desc()).limit(1)
     )
     validation = result.scalar_one_or_none()
+    
+    # If not found and document is a duplicate, get validation from original document
+    if not validation:
+        # Find the original invoice (using same logic as get_invoice)
+        from app.models.extraction import Extraction
+        from app.utils.duplicate_detector import compute_duplicate_hash
+        
+        doc_result = await db.execute(
+            select(Document).where(
+                Document.id == document_id,
+                Document.tenant_id == tenant_id,
+                Document.deleted_at.is_(None),
+            )
+        )
+        doc = doc_result.scalar_one_or_none()
+        
+        if doc and doc.status == "DONE":
+            extraction_result = await db.execute(
+                select(Extraction).where(
+                    Extraction.document_id == document_id,
+                    Extraction.tenant_id == tenant_id,
+                ).order_by(Extraction.created_at.desc()).limit(1)
+            )
+            extraction = extraction_result.scalar_one_or_none()
+            
+            if extraction:
+                structured = extraction.structured_data
+                dup_hash = compute_duplicate_hash(
+                    tenant_id,
+                    structured.get("vendor_gstin"),
+                    structured.get("invoice_number", ""),
+                    str(structured.get("invoice_date", "")),
+                    structured.get("total", 0),
+                )
+                
+                # Find original invoice
+                original_invoice_result = await db.execute(
+                    select(CanonicalInvoice).where(
+                        CanonicalInvoice.tenant_id == tenant_id,
+                        CanonicalInvoice.duplicate_hash == dup_hash,
+                        CanonicalInvoice.is_duplicate.is_(False),
+                        CanonicalInvoice.deleted_at.is_(None),
+                    )
+                )
+                original_invoice = original_invoice_result.scalar_one_or_none()
+                
+                if original_invoice:
+                    # Get validation from original document
+                    validation_result = await db.execute(
+                        select(Validation).where(
+                            Validation.document_id == original_invoice.document_id,
+                            Validation.tenant_id == tenant_id,
+                        ).order_by(Validation.created_at.desc()).limit(1)
+                    )
+                    validation = validation_result.scalar_one_or_none()
+    
     if not validation:
         raise HTTPException(404, "No validation found for this document")
 
@@ -211,17 +318,31 @@ async def update_invoice(
     extraction_id = extraction.id if extraction else None
 
     # Save new validation record
+    overall_status = val_result.get("overall_status", "warn")
     new_val = Validation(
         tenant_id=tenant_id,
         document_id=document_id,
         extraction_id=extraction_id,
-        overall_status=val_result.get("overall_status", "warn"),
+        overall_status=overall_status,
         field_results=val_result.get("field_results", {}),
         warnings_count=sum(1 for v in val_result.get("field_results", {}).values() if v.get("status") == "warn"),
         errors_count=sum(1 for v in val_result.get("field_results", {}).values() if v.get("status") == "fail"),
         validated_by="bedrock+user",
     )
     db.add(new_val)
+    await db.flush()
+
+    if overall_status in ("fail", "warn"):
+        try:
+            ai_review = await asyncio.to_thread(
+                generate_ai_review,
+                inv_data,
+                val_result.get("field_results", {}),
+                {}
+            )
+            new_val.ai_suggestions = ai_review
+        except Exception:
+            pass
 
     await log_action(db, tenant_id, user.id, "invoice.update", "canonical_invoice", invoice.id, {"fields": list(updates.keys())})
     await db.flush()
@@ -343,13 +464,58 @@ async def approve_invoice(
     if invoice.is_duplicate:
         raise HTTPException(400, "Cannot approve a duplicate invoice")
 
+    if invoice.validation_status == "APPROVED":
+        raise HTTPException(400, "Invoice already approved")
+
     invoice.validation_status = "APPROVED"
 
     try:
         txn = await post_invoice(db, invoice, tenant_id)
         await mark_gst_stale(db, tenant_id, invoice.invoice_date)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Approval failed - rollback status and generate AI suggestions
+        invoice.validation_status = "PENDING"
+        await db.flush()
+        
+        # Generate AI review for the approval error
+        invoice_data = {
+            "vendor_name": invoice.vendor_name,
+            "invoice_number": invoice.invoice_number,
+            "invoice_date": str(invoice.invoice_date) if invoice.invoice_date else None,
+            "vendor_gstin": invoice.vendor_gstin,
+            "buyer_gstin": invoice.buyer_gstin,
+            "place_of_supply": invoice.place_of_supply,
+            "subtotal": float(invoice.subtotal or 0),
+            "cgst": float(invoice.cgst or 0),
+            "sgst": float(invoice.sgst or 0),
+            "igst": float(invoice.igst or 0),
+            "cess": float(invoice.cess or 0),
+            "total": float(invoice.total or 0),
+            "line_items": invoice.line_items if invoice.line_items else [],
+        }
+        
+        try:
+            ai_suggestions = await asyncio.to_thread(
+                generate_approval_error_review,
+                invoice_data,
+                str(e)
+            )
+        except Exception as ai_err:
+            print(f"[APPROVE] AI suggestion generation failed: {ai_err}")
+            ai_suggestions = {
+                "error_type": "approval_failed",
+                "root_cause": str(e),
+                "suggestions": [],
+                "summary": "Approval failed. Please review the invoice data."
+            }
+        
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": str(e),
+                "ai_suggestions": ai_suggestions
+            }
+        )
 
     doc_result = await db.execute(select(Document).where(Document.id == document_id))
     doc = doc_result.scalar_one()

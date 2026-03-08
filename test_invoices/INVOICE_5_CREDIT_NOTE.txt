@@ -1,0 +1,76 @@
+═══════════════════════════════════════════════════════════════
+                      CREDIT NOTE
+═══════════════════════════════════════════════════════════════
+
+Credit Note No: CN-2026-001                 Date: 08/03/2026
+GSTIN: 29ABCDE1234F1Z5                      PAN: ABCDE1234F
+
+Original Invoice: SALES-2026-001            Date: 06/03/2026
+
+From:
+DEMO MSME PVT LTD
+456 Brigade Road, Richmond Town
+Bangalore, Karnataka - 560025
+Phone: +91 9988776655
+Email: accounts@demomsme.com
+
+To:
+RELIANCE RETAIL LIMITED
+GSTIN: 29AABCR1234A1Z5
+Corporate Office, Indiranagar
+Bangalore, Karnataka - 560038
+Phone: +91 8899001122
+
+═══════════════════════════════════════════════════════════════
+CREDIT NOTE - SERVICE CANCELLATION/REFUND
+═══════════════════════════════════════════════════════════════
+
+Reason: Partial cancellation of IT Consulting hours
+(10 hours cancelled due to project scope change)
+
+S.No  Description              HSN      Qty    Rate       Amount
+───────────────────────────────────────────────────────────────
+1     IT Consulting Services  998314   -10   3,000.00  -30,000
+         (Cancellation)
+───────────────────────────────────────────────────────────────
+
+                                       Subtotal:    ₹ -30,000.00
+                                       CGST @ 9%:   ₹  -2,700.00
+                                       SGST @ 9%:   ₹  -2,700.00
+                                       ───────────────────────
+                                       GRAND TOTAL: ₹ -35,400.00
+
+Amount in Words: Thirty Five Thousand Four Hundred Rupees Only
+                 (CREDIT)
+
+Note: This amount will be adjusted against future invoices
+or refunded as per customer preference.
+
+───────────────────────────────────────────────────────────────
+ORIGINAL INVOICE DETAILS
+───────────────────────────────────────────────────────────────
+Invoice No: SALES-2026-001
+Invoice Date: 06/03/2026
+Original Amount: ₹2,36,000.00
+
+REVISED AMOUNT AFTER CREDIT NOTE
+───────────────────────────────────────────────────────────────
+Original Invoice Amount:          ₹2,36,000.00
+Less: Credit Note Amount:         ₹  35,400.00
+                                  ─────────────
+Net Amount Due:                   ₹2,00,600.00
+
+───────────────────────────────────────────────────────────────
+TAX DECLARATION
+───────────────────────────────────────────────────────────────
+This credit note is issued in accordance with GST Rules.
+The tax liability will be adjusted in GSTR-1 of March 2026.
+
+                    For DEMO MSME PVT LTD
+
+
+                    Authorized Signatory
+                    (Accounts Manager)
+
+This is a system-generated credit note
+═══════════════════════════════════════════════════════════════

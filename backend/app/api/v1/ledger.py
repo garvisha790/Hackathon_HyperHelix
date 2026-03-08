@@ -181,6 +181,39 @@ async def recompute_transaction(
     return _txn_response(txn)
 
 
+@router.delete("/transactions/{txn_id}")
+async def delete_transaction(
+    txn_id: uuid.UUID,
+    user: CurrentUser = None,
+    tenant_id: TenantId = None,
+    db: DB = None,
+):
+    """Hard delete a ledger transaction and its journal lines."""
+    result = await db.execute(
+        select(LedgerTransaction).where(
+            LedgerTransaction.id == txn_id,
+            LedgerTransaction.tenant_id == tenant_id,
+            LedgerTransaction.deleted_at.is_(None),
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+
+    # Log before deletion (since we won't have the record after)
+    await log_action(db, tenant_id, user.id, "ledger.delete", "ledger_transaction", txn.id)
+    
+    # Hard delete journal lines first (FK constraint)
+    for line in txn.journal_lines:
+        await db.delete(line)
+    
+    # Then delete the transaction
+    await db.delete(txn)
+    await db.flush()
+    
+    return {"status": "deleted", "transaction_id": str(txn_id)}
+
+
 def _txn_response(txn: LedgerTransaction) -> LedgerTransactionResponse:
     return LedgerTransactionResponse(
         id=str(txn.id),

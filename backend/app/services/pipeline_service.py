@@ -15,7 +15,7 @@ from app.models.extraction import Extraction
 from app.models.validation import Validation
 from app.models.invoice import CanonicalInvoice
 from app.services.textract_service import analyze_expense, parse_textract_expense
-from app.services.bedrock_service import validate_invoice_fields
+from app.services.bedrock_service import validate_invoice_fields, generate_ai_review
 from app.utils.gst_validator import (
     validate_gstin, extract_state_from_gstin, is_interstate,
     validate_total_consistency, validate_gst_split,
@@ -123,6 +123,21 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
         )
         db.add(validation)
         await db.flush()
+
+        if overall in ("fail", "warn"):
+            _log("[PIPELINE]   2.5/3 Generating AI suggestions...")
+            try:
+                ai_review = await asyncio.to_thread(
+                    generate_ai_review, 
+                    structured, 
+                    merged_results,
+                    raw_response
+                )
+                validation.ai_suggestions = ai_review
+                _log(f"[PIPELINE]   2.5/3 Generated {len(ai_review.get('suggestions', []))} suggestions")
+            except Exception as e:
+                _log(f"[PIPELINE]   2.5/3 AI suggestions failed: {e}")
+
         await _set_status(db, doc, "VALIDATED")
 
         # Step 3: Create canonical invoice
@@ -160,7 +175,34 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             existing_ci.total = structured.get("total", 0)
             existing_ci.validation_status = "VALID" if overall == "pass" else "PENDING"
         elif existing:
-            _log(f"[PIPELINE]   3/3 Duplicate hash already in DB (invoice {existing.id}), linking without new insert")
+            _log(f"[PIPELINE]   3/3 Duplicate hash already in DB (invoice {existing.id}), creating duplicate record")
+            # Create a duplicate invoice record (is_duplicate=True, duplicate_hash=None to avoid constraint)
+            canonical = CanonicalInvoice(
+                document_id=doc.id,
+                tenant_id=tenant_id,
+                document_type=doc.document_type,
+                invoice_number=invoice_number,
+                invoice_date=invoice_date,
+                vendor_name=structured.get("vendor_name"),
+                vendor_gstin=structured.get("vendor_gstin"),
+                vendor_state_code=vendor_state,
+                buyer_name=structured.get("buyer_name"),
+                buyer_gstin=structured.get("buyer_gstin"),
+                buyer_state_code=buyer_state,
+                place_of_supply=pos,
+                subtotal=structured.get("subtotal", 0),
+                cgst=structured.get("cgst", 0),
+                sgst=structured.get("sgst", 0),
+                igst=structured.get("igst", 0),
+                cess=structured.get("cess", 0),
+                total=structured.get("total", 0),
+                line_items=structured.get("line_items", []),
+                is_duplicate=True,
+                duplicate_of=existing.id,
+                duplicate_hash=None,  # Set to None to avoid unique constraint violation
+                validation_status="VALID" if overall == "pass" else "PENDING",
+            )
+            db.add(canonical)
         else:
             canonical = CanonicalInvoice(
                 document_id=doc.id,

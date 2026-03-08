@@ -63,6 +63,7 @@ async def _post_standard_invoice(
         category_method=category_result.get("method", "rule"),
     )
     db.add(txn)
+    # Flush transaction first to get its ID assigned
     await db.flush()
 
     lines = []
@@ -116,6 +117,7 @@ async def _post_credit_note(
         assigned_category="Credit Note Reversal",
     )
     db.add(txn)
+    # Flush transaction first to get its ID assigned
     await db.flush()
 
     lines = []
@@ -154,6 +156,7 @@ async def _post_debit_note(
         assigned_category="Debit Note Addition",
     )
     db.add(txn)
+    # Flush transaction first to get its ID assigned
     await db.flush()
 
     lines = []

@@ -324,3 +324,64 @@ Respond clearly and concisely."""
     except Exception as e:
         return {"answer": f"Unable to process query: {e}", "has_data": False}
 
+
+def generate_approval_error_review(invoice_data: dict, error_message: str) -> dict:
+    """Generate AI suggestions to fix approval-time errors like double-entry violations."""
+    
+    prompt = f"""You are an expert accountant reviewing an invoice that failed approval validation.
+
+INVOICE DATA:
+{json.dumps(invoice_data, indent=2, default=str)}
+
+APPROVAL ERROR:
+{error_message}
+
+TASK:
+Analyze why this invoice failed approval and provide specific, actionable suggestions to fix the issue.
+
+For double-entry violations:
+1. Identify which amounts don't balance
+2. Check if subtotal + taxes = total amount
+3. Suggest which fields need correction
+4. Provide the exact corrected values
+
+OUTPUT FORMAT (JSON):
+{{
+  "error_type": "double_entry_violation" | "missing_data" | "invalid_format",
+  "root_cause": "Brief explanation of what caused the error",
+  "suggestions": [
+    {{
+      "field_name": "field to correct",
+      "current_value": "current incorrect value",
+      "suggested_value": "correct value",
+      "reasoning": "why this change fixes the issue"
+    }}
+  ],
+  "summary": "Overall recommendation"
+}}
+
+Provide ONLY valid JSON output, no additional text."""
+
+    try:
+        response = _invoke_claude(prompt, max_tokens=2048)
+        # Parse JSON from response
+        result = json.loads(response.strip())
+        return result
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse AI approval error review: {e}")
+        logger.error(f"Raw response: {response}")
+        return {
+            "error_type": "system_error",
+            "root_cause": "Failed to parse AI response",
+            "suggestions": [],
+            "summary": f"Error: {error_message}"
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate approval error review: {e}")
+        return {
+            "error_type": "system_error",
+            "root_cause": str(e),
+            "suggestions": [],
+            "summary": f"Error: {error_message}"
+        }
+

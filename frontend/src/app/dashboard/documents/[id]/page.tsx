@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency, formatDate, statusColor, validationColor, cn } from "@/lib/utils";
 import { ArrowLeft, ArrowRight, CheckCircle, XCircle, FileText, Zap, Trash2, RotateCcw, AlertTriangle, Edit2, Save, Wand2 } from "lucide-react";
+import { AISuggestionsPanel } from "@/components/documents/ai-suggestions-panel";
 
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -76,11 +77,26 @@ export default function DocumentDetailPage() {
     mutationFn: () => api.post(`/invoices/${docId}/approve`),
     onSuccess: () => {
       setApproveError(null);
+      setReviewSuggestions([]);
+      setAiReviewMode(false);
       queryClient.invalidateQueries({ queryKey: ["invoice", docId] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
     onError: (err: any) => {
-      setApproveError(err.response?.data?.detail || "Failed to approve invoice. Please check amounts.");
+      const errorDetail = err.response?.data?.detail;
+      
+      // Check if error contains AI suggestions
+      if (errorDetail && typeof errorDetail === 'object' && errorDetail.ai_suggestions) {
+        const aiSuggestions = errorDetail.ai_suggestions;
+        setApproveError(`${errorDetail.error}\n\n${aiSuggestions.root_cause}`);
+        setReviewSuggestions(aiSuggestions.suggestions || []);
+        setAiReviewMode(true);
+        setIsEditing(true); // Enable editing to apply suggestions
+      } else {
+        setApproveError(typeof errorDetail === 'string' ? errorDetail : "Failed to approve invoice. Please check amounts.");
+        setReviewSuggestions([]);
+        setAiReviewMode(false);
+      }
     }
   });
 
@@ -97,6 +113,7 @@ export default function DocumentDetailPage() {
       setIsEditing(false);
       setAiReviewMode(false);
       setReviewSuggestions([]);
+      setApproveError(null);
     },
   });
 
@@ -117,7 +134,19 @@ export default function DocumentDetailPage() {
   const rejectSuggestion = (fieldName: string) => {
     setReviewSuggestions((prev) => prev.filter(s => s.field_name !== fieldName));
   };
+  const handleAcceptValidationSuggestion = async (suggestion: any) => {
+    const updates = { [suggestion.field_name]: suggestion.suggested_value };
+    await updateMutation.mutateAsync(updates);
+  };
 
+  const handleAcceptAllValidationSuggestions = async () => {
+    if (!validation?.ai_suggestions?.suggestions) return;
+    const updates = validation.ai_suggestions.suggestions.reduce((acc: any, sug: any) => {
+      acc[sug.field_name] = sug.suggested_value;
+      return acc;
+    }, {});
+    await updateMutation.mutateAsync(updates);
+  };
   const acceptAllSuggestions = () => {
     const updates: any = {};
     reviewSuggestions.forEach(s => { updates[s.field_name] = s.suggested_value; });
@@ -476,9 +505,31 @@ export default function DocumentDetailPage() {
                         <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
                         <div>
                           <h3 className="text-sm font-bold text-red-800">Cannot Approve</h3>
-                          <p className="text-sm text-red-700 mt-1">{approveError}</p>
+                          <p className="text-sm text-red-700 mt-1 whitespace-pre-line">{approveError}</p>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {aiReviewMode && reviewSuggestions.length > 0 && approveError && (
+                    <div className="mb-4">
+                      <AISuggestionsPanel
+                        suggestions={reviewSuggestions}
+                        summary="AI analyzed the approval error and generated these fixes:"
+                        onAccept={handleAcceptValidationSuggestion}
+                        onAcceptAll={handleAcceptAllValidationSuggestions}
+                      />
+                    </div>
+                  )}
+
+                  {validation?.ai_suggestions && validation.ai_suggestions.suggestions?.length > 0 && (
+                    <div className="mb-4">
+                      <AISuggestionsPanel
+                        suggestions={validation.ai_suggestions.suggestions}
+                        summary={validation.ai_suggestions.summary_of_analysis || ""}
+                        onAccept={handleAcceptValidationSuggestion}
+                        onAcceptAll={handleAcceptAllValidationSuggestions}
+                      />
                     </div>
                   )}
 
@@ -497,20 +548,29 @@ export default function DocumentDetailPage() {
                       </button>
                     </div>
                   ) : invoice.validation_status === "PENDING" || invoice.validation_status === "VALID" ? (
-                    <div className="flex gap-4 mt-4">
+                    <div className="flex flex-col gap-3 mt-4">
                       <button
                         onClick={() => approveMutation.mutate()}
                         disabled={approveMutation.isPending || invoice.is_duplicate}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-taxodo-primary px-4 py-3.5 text-sm font-bold text-white shadow-sm hover:bg-taxodo-primary/90 disabled:opacity-50 transition-all active:scale-[0.98]"
+                        className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-green-600 px-6 py-4 text-base font-bold text-white shadow-lg hover:bg-green-700 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 active:scale-[0.98]"
                       >
-                        <CheckCircle className="h-5 w-5" /> Approve Entry
+                        {approveMutation.isPending ? (
+                          <>
+                            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                            Posting to Books...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-5 w-5" /> ✓ Approve & Post to Books
+                          </>
+                        )}
                       </button>
                       <button
                         onClick={() => rejectMutation.mutate()}
                         disabled={rejectMutation.isPending}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-taxodo-border bg-white px-4 py-3.5 text-sm font-bold text-gray-700 hover:bg-gray-50 hover:text-taxodo-danger hover:border-taxodo-danger/30 disabled:opacity-50 transition-all active:scale-[0.98]"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-taxodo-border bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-taxodo-danger hover:border-taxodo-danger/30 disabled:opacity-50 transition-all active:scale-[0.98]"
                       >
-                        <XCircle className="h-5 w-5" /> Reject
+                        <XCircle className="h-5 w-5" /> Reject Invoice
                       </button>
                     </div>
                   ) : (

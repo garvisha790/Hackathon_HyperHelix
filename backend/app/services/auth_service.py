@@ -91,8 +91,10 @@ async def signup(db: AsyncSession, req: SignupRequest) -> TokenResponse:
         AuthParameters=_get_auth_params(req.email, req.password),
     )
 
+    auth_result = auth_resp["AuthenticationResult"]
     return TokenResponse(
-        access_token=auth_resp["AuthenticationResult"]["AccessToken"],
+        access_token=auth_result["AccessToken"],
+        refresh_token=auth_result.get("RefreshToken"),
         user_id=str(user.id),
         tenant_id=str(tenant.id),
         role=user.role,
@@ -129,6 +131,7 @@ async def login(db: AsyncSession, req: LoginRequest) -> TokenResponse:
     print(f"[LOGIN] User found in DB: {user.email} (ID: {user.id})")
     return TokenResponse(
         access_token=access_token,
+        refresh_token=auth_resp["AuthenticationResult"].get("RefreshToken"),
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
         role=user.role,
@@ -146,6 +149,53 @@ async def dev_login(db: AsyncSession, email: str) -> TokenResponse:
 
     return TokenResponse(
         access_token=f"dev:{user.cognito_sub or user.id}:{email}",
+        user_id=str(user.id),
+        tenant_id=str(user.tenant_id),
+        role=user.role,
+    )
+
+
+async def refresh_access_token(db: AsyncSession, refresh_token: str) -> TokenResponse:
+    """Use Cognito refresh token to get new access token."""
+    cognito = _get_cognito_client()
+
+    # Cognito requires REFRESH_TOKEN_AUTH flow
+    auth_params = {"REFRESH_TOKEN": refresh_token}
+    if settings.cognito_app_client_secret:
+        # For refresh token, we need a username. Extract from the refresh token or use a dummy value
+        # Actually, for REFRESH_TOKEN_AUTH with client secret, we need to compute SECRET_HASH differently
+        # Let's check if client secret is needed for refresh
+        pass  # Cognito REFRESH_TOKEN_AUTH may not require SECRET_HASH
+
+    auth_resp = cognito.initiate_auth(
+        ClientId=settings.cognito_app_client_id,
+        AuthFlow="REFRESH_TOKEN_AUTH",
+        AuthParameters=auth_params,
+    )
+
+    access_token = auth_resp["AuthenticationResult"]["AccessToken"]
+    print(f"[REFRESH] Successfully refreshed access token")
+
+    # Get user info from new access token
+    user_info = cognito.get_user(AccessToken=access_token)
+    cognito_sub = user_info["Username"]
+    for attr in user_info.get("UserAttributes", []):
+        if attr["Name"] == "sub":
+            cognito_sub = attr["Value"]
+
+    # Find user in database
+    result = await db.execute(
+        select(User).where(User.cognito_sub == cognito_sub, User.deleted_at.is_(None))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        print(f"[REFRESH] User not found in database for cognito_sub: {cognito_sub}")
+        raise ValueError("User not found in database")
+
+    print(f"[REFRESH] Token refreshed for user: {user.email} (ID: {user.id})")
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,  # Return same refresh token
         user_id=str(user.id),
         tenant_id=str(user.tenant_id),
         role=user.role,

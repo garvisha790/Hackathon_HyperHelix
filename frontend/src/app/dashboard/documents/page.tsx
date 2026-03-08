@@ -4,12 +4,29 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { formatDate, statusColor, cn } from "@/lib/utils";
-import { Upload, FileText, RefreshCw, RotateCcw } from "lucide-react";
+import { Upload, FileText, RefreshCw, RotateCcw, Loader2 } from "lucide-react";
+import { DuplicateModal } from "@/components/documents/duplicate-modal";
+
+// Processing stage helper
+function getProcessingStage(status: string) {
+  const stages = {
+    UPLOADED: { stage: 1, text: "Uploaded", icon: "✓" },
+    PROCESSING: { stage: 2, text: "Extracting Data", icon: "↻" },
+    DONE: { stage: 3, text: "Validating", icon: "↻" },
+    VALIDATED: { stage: 4, text: "Complete", icon: "✓" },
+    APPROVED: { stage: 4, text: "Complete", icon: "✓" },
+    FAILED: { stage: 0, text: "Failed", icon: "✗" },
+  };
+  return stages[status as keyof typeof stages] || { stage: 0, text: status, icon: "" };
+}
 
 export default function DocumentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [duplicateInfo, setDuplicateInfo] = useState<any>(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["documents"],
@@ -17,12 +34,22 @@ export default function DocumentsPage() {
     refetchInterval: 5000,
   });
 
+  const checkDuplicateMutation = useMutation({
+    mutationFn: async (fileName: string) => {
+      const { data } = await api.get(`/documents/check-duplicate/${encodeURIComponent(fileName)}`);
+      return data;
+    },
+  });
+
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, replaceDocId }: { file: File; replaceDocId?: string }) => {
       setUploading(true);
       const formData = new FormData();
       formData.append("file", file);
       formData.append("document_type", "invoice");
+      if (replaceDocId) {
+        formData.append("replace_document_id", replaceDocId);
+      }
       const { data } = await api.post("/documents/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         timeout: 60000,
@@ -32,6 +59,9 @@ export default function DocumentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
       setUploading(false);
+      setPendingFile(null);
+      setDuplicateInfo(null);
+      setShowDuplicateModal(false);
     },
     onError: (err) => {
       console.error("Upload error:", err);
@@ -39,15 +69,48 @@ export default function DocumentsPage() {
     },
   });
 
+  const handleFileUpload = async (file: File) => {
+    // Check for duplicate first
+    const duplicateCheck = await checkDuplicateMutation.mutateAsync(file.name);
+    
+    if (duplicateCheck.is_duplicate) {
+      // Show duplicate modal
+      setPendingFile(file);
+      setDuplicateInfo(duplicateCheck.existing_document);
+      setShowDuplicateModal(true);
+    } else {
+      // No duplicate, upload directly
+      uploadMutation.mutate({ file });
+    }
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file) uploadMutation.mutate(file);
+    if (file) handleFileUpload(file);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadMutation.mutate(file);
+    if (file) handleFileUpload(file);
+  };
+
+  const handleReplaceDocument = () => {
+    if (pendingFile && duplicateInfo) {
+      uploadMutation.mutate({ file: pendingFile, replaceDocId: duplicateInfo.id });
+    }
+  };
+
+  const handleKeepBoth = () => {
+    if (pendingFile) {
+      uploadMutation.mutate({ file: pendingFile });
+    }
+  };
+
+  const handleCloseDuplicateModal = () => {
+    setShowDuplicateModal(false);
+    setPendingFile(null);
+    setDuplicateInfo(null);
   };
 
   const retryMutation = useMutation({
@@ -123,9 +186,27 @@ export default function DocumentsPage() {
                   <td className="table-td font-medium">{doc.file_name}</td>
                   <td className="table-td capitalize text-taxodo-muted">{doc.document_type.replace("_", " ")}</td>
                   <td className="table-td">
-                    <span className={cn("inline-block rounded-sm px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide", statusColor(doc.status))}>
-                      {doc.status}
-                    </span>
+                    {doc.status === "PROCESSING" || doc.status === "UPLOADED" ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-taxodo-primary" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-taxodo-ink">{getProcessingStage(doc.status).text}</span>
+                          <div className="flex items-center gap-1 text-[10px] text-taxodo-muted">
+                            <span className={doc.status === "UPLOADED" || doc.status === "PROCESSING" || doc.status === "DONE" || doc.status === "VALIDATED" ? "text-green-600" : "text-gray-400"}>Upload</span>
+                            <span>→</span>
+                            <span className={doc.status === "PROCESSING" || doc.status === "DONE" || doc.status === "VALIDATED" ? "text-taxodo-primary font-semibold" : "text-gray-400"}>Extract</span>
+                            <span>→</span>
+                            <span className={doc.status === "DONE" || doc.status === "VALIDATED" ? "text-taxodo-primary font-semibold" : "text-gray-400"}>Validate</span>
+                            <span>→</span>
+                            <span className={doc.status === "VALIDATED" || doc.status === "APPROVED" ? "text-green-600" : "text-gray-400"}>Done</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className={cn("inline-block rounded-sm px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide", statusColor(doc.status))}>
+                        {doc.status}
+                      </span>
+                    )}
                   </td>
                   <td className="table-td text-taxodo-muted">{formatDate(doc.created_at)}</td>
                   <td className="table-td">
@@ -143,6 +224,18 @@ export default function DocumentsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Duplicate Detection Modal */}
+      {showDuplicateModal && duplicateInfo && pendingFile && (
+        <DuplicateModal
+          isOpen={showDuplicateModal}
+          onClose={handleCloseDuplicateModal}
+          onReplace={handleReplaceDocument}
+          onKeepBoth={handleKeepBoth}
+          existingDocument={duplicateInfo}
+          newFileName={pendingFile.name}
+        />
       )}
     </div>
   );

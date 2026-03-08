@@ -42,6 +42,7 @@ def _content_type_for(filename: str) -> tuple[str, str]:
 async def upload_document_file(
     file: UploadFile = File(...),
     document_type: str = Form("invoice"),
+    replace_document_id: str = Form(None),  # ID of document to replace
     user: CurrentUser = None,
     tenant_id: TenantId = None,
     db: DB = None,
@@ -50,6 +51,26 @@ async def upload_document_file(
     content_type, ext = _content_type_for(file.filename or "file.pdf")
     if not content_type or ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Unsupported file type. Allowed: {list(ALLOWED_EXTENSIONS)}")
+
+    # Handle replacement - delete old document if requested
+    if replace_document_id:
+        try:
+            old_doc_id = uuid.UUID(replace_document_id)
+            result = await db.execute(
+                select(Document).where(
+                    Document.id == old_doc_id,
+                    Document.tenant_id == tenant_id,
+                    Document.deleted_at.is_(None),
+                )
+            )
+            old_doc = result.scalar_one_or_none()
+            if old_doc:
+                _log(f"[UPLOAD] Replacing document {old_doc_id} with new upload")
+                old_doc.deleted_at = datetime.utcnow()
+                await log_action(db, tenant_id, user.id, "document.delete", "document", old_doc_id, 
+                               {"reason": "replaced_by_new_upload"})
+        except Exception as e:
+            _log(f"[UPLOAD] Error replacing document: {e}")
 
     s3_key = f"tenants/{tenant_id}/documents/{uuid.uuid4()}.{ext}"
     file_bytes = await file.read()
@@ -120,6 +141,37 @@ async def upload_document(
 
     await log_action(db, tenant_id, user.id, "document.upload", "document", doc.id, {"file_name": file_name})
     return DocumentUploadResponse(id=str(doc.id), upload_url=upload_url, s3_key=s3_key)
+
+
+@router.get("/check-duplicate/{file_name}")
+async def check_duplicate_by_filename(
+    file_name: str,
+    user: CurrentUser = None,
+    tenant_id: TenantId = None,
+    db: DB = None,
+):
+    """Check if a document with the same filename exists for this tenant."""
+    result = await db.execute(
+        select(Document).where(
+            Document.tenant_id == tenant_id,
+            Document.file_name == file_name,
+            Document.deleted_at.is_(None),
+        ).order_by(Document.created_at.desc())
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        return {
+            "is_duplicate": True,
+            "existing_document": {
+                "id": str(existing.id),
+                "file_name": existing.file_name,
+                "status": existing.status,
+                "created_at": existing.created_at.isoformat(),
+            }
+        }
+    
+    return {"is_duplicate": False}
 
 
 @router.post("/{document_id}/process")
@@ -222,5 +274,15 @@ async def delete_document(
         raise HTTPException(404, "Document not found")
 
     doc.deleted_at = datetime.utcnow()
+    
+    # Also clear the canonical invoice's duplicate_hash to allow re-upload without constraint violation
+    from app.models.invoice import CanonicalInvoice
+    ci_result = await db.execute(
+        select(CanonicalInvoice).where(CanonicalInvoice.document_id == document_id)
+    )
+    canonical = ci_result.scalar_one_or_none()
+    if canonical:
+        canonical.duplicate_hash = None
+    
     await log_action(db, user.tenant_id, user.id, "document.delete", "document", doc.id)
     return {"status": "deleted"}

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.config import get_settings
-from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse
+from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse, RefreshTokenRequest
 from app.services import auth_service
 from app.dependencies import CurrentUser
 
@@ -76,3 +76,18 @@ async def get_me(current_user: CurrentUser):
         print(f"[AUTH/ME] Error retrieving user: {str(e)}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    """Refresh access token using refresh token."""
+    try:
+        print(f"[AUTH/REFRESH] Attempting to refresh token")
+        result = await auth_service.refresh_access_token(db, req.refresh_token)
+        print(f"[AUTH/REFRESH] Token refresh successful")
+        return result
+    except Exception as e:
+        import traceback
+        print(f"[AUTH/REFRESH] Token refresh failed: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=401, detail=f"Token refresh failed: {str(e)}")

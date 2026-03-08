@@ -2,11 +2,26 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { BarChart3, FileText, Receipt, TrendingUp, AlertTriangle } from "lucide-react";
+import { BarChart3, FileText, Receipt, TrendingUp, AlertTriangle, HelpCircle } from "lucide-react";
 import { PnLChart } from "@/components/dashboard/pnl-chart";
 import { ExpensePie } from "@/components/dashboard/expense-pie";
 import { GSTTracker } from "@/components/dashboard/gst-tracker";
 import { CashflowChart } from "@/components/dashboard/cashflow-chart";
+
+// Tooltip Component
+function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  return (
+    <div className="group relative inline-block">
+      {children}
+      <div className="invisible group-hover:visible absolute z-50 w-72 p-3 mt-2 -left-24 text-sm bg-gray-900 text-white rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+        <div className="relative">
+          {text}
+          <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-b-4 border-transparent border-b-gray-900"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function OverviewPage() {
   const { data, isLoading } = useQuery({
@@ -31,10 +46,34 @@ export default function OverviewPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KPICard icon={FileText} label="Total Documents" value={d.total_documents || 0} color="primary" />
-        <KPICard icon={TrendingUp} label="Total Revenue" value={formatCurrency(d.total_revenue || 0)} color="success" />
-        <KPICard icon={BarChart3} label="Total Expenses" value={formatCurrency(d.total_expenses || 0)} color="danger" />
-        <KPICard icon={Receipt} label="GST Liability" value={formatCurrency(d.gst_liability || 0)} color="warning" />
+        <KPICard 
+          icon={FileText} 
+          label="Total Documents" 
+          value={d.total_documents || 0} 
+          color="primary"
+          tooltip="Total number of invoices and documents uploaded and processed in your account. This includes approved, pending, and rejected documents."
+        />
+        <KPICard 
+          icon={TrendingUp} 
+          label="Total Revenue" 
+          value={formatCurrency(d.total_revenue || 0)} 
+          color="success"
+          tooltip="Total revenue from all approved sales invoices. This represents the money your business has earned from customers this financial year."
+        />
+        <KPICard 
+          icon={BarChart3} 
+          label="Total Expenses" 
+          value={formatCurrency(d.total_expenses || 0)} 
+          color="danger"
+          tooltip="Total expenses from all approved purchase invoices. This includes costs of goods, services, and operational expenses your business has incurred."
+        />
+        <KPICard 
+          icon={Receipt} 
+          label="GST Liability" 
+          value={formatCurrency(d.gst_liability || 0)} 
+          color="warning"
+          tooltip={`Net GST you owe to the government this month. Calculated as: Output GST (collected from customers) minus Input GST (paid to vendors). ${d.gst_liability > 0 ? 'Due by 20th of next month.' : 'No liability this month.'}`}
+        />
       </div>
 
       {/* Pipeline Status */}
@@ -73,7 +112,7 @@ export default function OverviewPage() {
   );
 }
 
-function KPICard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color: string }) {
+function KPICard({ icon: Icon, label, value, color, tooltip }: { icon: any; label: string; value: string | number; color: string; tooltip?: string }) {
   const colors: Record<string, string> = {
     primary: "bg-taxodo-primary/10 text-taxodo-primary",
     success: "bg-taxodo-success/10 text-taxodo-success",
@@ -87,8 +126,15 @@ function KPICard({ icon: Icon, label, value, color }: { icon: any; label: string
         <div className={`flex h-12 w-12 items-center justify-center rounded-md ${colors[color]}`}>
           <Icon className="h-6 w-6" />
         </div>
-        <div>
-          <p className="text-[13px] font-semibold tracking-wide text-taxodo-muted">{label}</p>
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="text-[13px] font-semibold tracking-wide text-taxodo-muted">{label}</p>
+            {tooltip && (
+              <Tooltip text={tooltip}>
+                <HelpCircle className="h-3.5 w-3.5 text-gray-400 hover:text-taxodo-primary cursor-help transition-colors" />
+              </Tooltip>
+            )}
+          </div>
           <p className="numeric text-2xl font-bold text-taxodo-ink">{value}</p>
         </div>
       </div>

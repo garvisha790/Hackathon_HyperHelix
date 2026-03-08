@@ -1,32 +1,36 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
-    const pathname = usePathname();
-    const { isAuthenticated, verifySession } = useAuth();
-    const [isVerifying, setIsVerifying] = useState(true);
+    const { isAuthenticated } = useAuth();
+    const [hasToken, setHasToken] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const checkAuth = async () => {
-            try {
-                const isValid = await verifySession();
-                if (!isValid) {
-                    router.replace("/auth/login");
-                }
-            } catch (err) {
+        // Check for token on mount (client-side only)
+        if (typeof window !== 'undefined') {
+            const token = localStorage.getItem("token");
+            console.log("[AUTH-GUARD] Token check:", !!token);
+            
+            if (!token) {
+                console.log("[AUTH-GUARD] No token, redirecting to login");
                 router.replace("/auth/login");
-            } finally {
-                setIsVerifying(false);
+                setIsLoading(false);
+                return;
             }
-        };
+            
+            // Have token - allow access immediately
+            console.log("[AUTH-GUARD] Token found, allowing access");
+            setHasToken(true);
+            setIsLoading(false);
+        }
+    }, [router]);
 
-        checkAuth();
-    }, [pathname, router, verifySession]);
-
-    if (isVerifying) {
+    // Show loading spinner during initial check
+    if (isLoading) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-taxodo-page">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-taxodo-primary border-t-transparent mx-auto"></div>
@@ -34,9 +38,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         );
     }
 
-    if (!isAuthenticated) {
-        return null; // Will redirect in useEffect
+    // If no token, don't render (useEffect will redirect)
+    if (!hasToken) {
+        return null;
     }
 
+    // If we have a token, render children
+    // The auth context will handle session verification in the background
     return <>{children}</>;
 }

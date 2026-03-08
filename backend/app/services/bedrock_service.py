@@ -227,15 +227,22 @@ Use this to find field values that the canonical extraction may have missed or g
 Based on ALL the information above:
 1. Start with the pre_computed_suggestions from the math engine as your primary suggestions. Refine them if you find better data in the raw OCR.
 2. If vendor_gstin or buyer_gstin format is invalid, suggest the correct format or the raw OCR value.
-3. If place_of_supply is empty but determinable from GSTINs, suggest it.
+3. If place_of_supply is empty but determinable from GSTINs, suggest it as a 2-DIGIT STATE CODE (e.g., "27" for Maharashtra, not "Maharashtra").
 4. If CGST != SGST for an intrastate transaction, flag it.
 5. If the transaction type says IGST should be 0 but it's not (or vice versa), flag it.
 6. Add a clear, professional 2-3 sentence summary of your review.
+
+CRITICAL FORMATTING RULES:
+- place_of_supply MUST be 2-digit state code (e.g., "27" not "Maharashtra")
+- vendor_state_code MUST be 2-digit code (first 2 chars of GSTIN)
+- buyer_state_code MUST be 2-digit code (first 2 chars of GSTIN)
+- DO NOT suggest state names, only codes
 
 DO NOT:
 - Change the total to just the sum of taxes (e.g., don't suggest total=14.5 when total=305)
 - Suggest changes for fields that are already correct
 - Invent GSTIN values not found in the data
+- Suggest state names instead of codes
 
 Return ONLY valid JSON (no Markdown, no backticks):
 {{

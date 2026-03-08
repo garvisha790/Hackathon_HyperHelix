@@ -17,7 +17,7 @@ from app.models.invoice import CanonicalInvoice
 from app.services.textract_service import analyze_expense, parse_textract_expense
 from app.services.bedrock_service import validate_invoice_fields, generate_ai_review
 from app.utils.gst_validator import (
-    validate_gstin, extract_state_from_gstin, is_interstate,
+    validate_gstin, extract_state_from_gstin, is_interstate, normalize_state_to_code,
     validate_total_consistency, validate_gst_split,
 )
 from app.services.posting_engine import post_invoice
@@ -144,7 +144,14 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
         _log("[PIPELINE]   3/3 Creating canonical invoice...")
         vendor_state = extract_state_from_gstin(structured.get("vendor_gstin"))
         buyer_state = extract_state_from_gstin(structured.get("buyer_gstin"))
-        pos = structured.get("place_of_supply") or buyer_state
+        
+        # Normalize place_of_supply to 2-digit state code
+        pos_raw = structured.get("place_of_supply") or buyer_state
+        pos = normalize_state_to_code(pos_raw) if pos_raw else None
+        
+        # Also normalize state codes extracted from GSTINs
+        vendor_state = normalize_state_to_code(vendor_state) if vendor_state else None
+        buyer_state = normalize_state_to_code(buyer_state) if buyer_state else None
 
         invoice_date = _parse_date(structured.get("invoice_date"))
         invoice_number = structured.get("invoice_number") or f"AUTO-{doc.id}"

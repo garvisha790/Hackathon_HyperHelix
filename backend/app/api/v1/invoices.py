@@ -13,6 +13,7 @@ from app.services.tax_service import mark_gst_stale
 from app.services.bedrock_service import validate_invoice_fields, generate_ai_review, generate_approval_error_review
 from app.middleware.audit import log_action
 from app.utils.s3 import generate_presigned_download_url
+from app.utils.gst_validator import normalize_state_to_code
 
 router = APIRouter()
 
@@ -279,6 +280,24 @@ async def update_invoice(
     updates = request.model_dump(exclude_unset=True)
     if not updates:
         return get_invoice(document_id, tenant_id, db)  # Just return it
+
+    # Normalize state fields to 2-digit codes before saving
+    if "place_of_supply" in updates and updates["place_of_supply"]:
+        normalized = normalize_state_to_code(updates["place_of_supply"])
+        if normalized:
+            updates["place_of_supply"] = normalized
+        else:
+            raise HTTPException(400, f"Invalid place_of_supply: {updates['place_of_supply']}. Must be 2-digit state code or valid state name.")
+    
+    if "vendor_state_code" in updates and updates["vendor_state_code"]:
+        normalized = normalize_state_to_code(updates["vendor_state_code"])
+        if normalized:
+            updates["vendor_state_code"] = normalized
+    
+    if "buyer_state_code" in updates and updates["buyer_state_code"]:
+        normalized = normalize_state_to_code(updates["buyer_state_code"])
+        if normalized:
+            updates["buyer_state_code"] = normalized
 
     for key, value in updates.items():
         setattr(invoice, key, value)

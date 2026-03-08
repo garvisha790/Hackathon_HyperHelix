@@ -108,3 +108,39 @@ def validate_gst_split(cgst: float, sgst: float, igst: float, is_interstate_txn:
         if abs(cgst - sgst) > 0.01:
             return {"valid": False, "message": f"CGST ({cgst}) should equal SGST ({sgst}) for intra-state"}
     return {"valid": True}
+
+
+def normalize_state_to_code(state_input: str | None) -> str | None:
+    """
+    Normalize state name or code to 2-digit state code.
+    
+    Args:
+        state_input: Can be state code ("27") or state name ("Maharashtra")
+    
+    Returns:
+        2-digit state code or None
+    
+    Examples:
+        "27" -> "27"
+        "Maharashtra" -> "27"
+        "maharashtra" -> "27"
+        "MAHARASHTRA" -> "27"
+    """
+    if not state_input:
+        return None
+    
+    state_input = str(state_input).strip()
+    
+    # If already a 2-digit code, return it
+    if len(state_input) == 2 and state_input.isdigit():
+        if state_input in INDIAN_STATE_CODES:
+            return state_input
+        return None
+    
+    # Try to find by state name (case-insensitive)
+    state_input_lower = state_input.lower()
+    for code, name in INDIAN_STATE_CODES.items():
+        if name.lower() == state_input_lower:
+            return code
+    
+    return None

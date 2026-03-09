@@ -42,6 +42,7 @@ def _content_type_for(filename: str) -> tuple[str, str]:
 async def upload_document_file(
     file: UploadFile = File(...),
     document_type: str = Form("invoice"),
+    replace_document_id: str = Form(None),  # ID of document to replace
     user: CurrentUser = None,
     tenant_id: TenantId = None,
     db: DB = None,
@@ -51,8 +52,45 @@ async def upload_document_file(
     if not content_type or ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f"Unsupported file type. Allowed: {list(ALLOWED_EXTENSIONS)}")
 
+    # Handle replacement - delete old document if requested
+    if replace_document_id:
+        try:
+            old_doc_id = uuid.UUID(replace_document_id)
+            result = await db.execute(
+                select(Document).where(
+                    Document.id == old_doc_id,
+                    Document.tenant_id == tenant_id,
+                    Document.deleted_at.is_(None),
+                )
+            )
+            old_doc = result.scalar_one_or_none()
+            if old_doc:
+                _log(f"[UPLOAD] Replacing document {old_doc_id} with new upload")
+                old_doc.deleted_at = datetime.utcnow()
+                await log_action(db, tenant_id, user.id, "document.delete", "document", old_doc_id, 
+                               {"reason": "replaced_by_new_upload"})
+        except Exception as e:
+            _log(f"[UPLOAD] Error replacing document: {e}")
+
     s3_key = f"tenants/{tenant_id}/documents/{uuid.uuid4()}.{ext}"
     file_bytes = await file.read()
+
+    # Content-hash based duplicate check
+    import hashlib
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
+    dup_result = await db.execute(
+        select(Document).where(
+            Document.tenant_id == tenant_id,
+            Document.content_hash == content_hash,
+            Document.deleted_at.is_(None),
+        )
+    )
+    content_dup = dup_result.scalar_one_or_none()
+    if content_dup and not replace_document_id:
+        raise HTTPException(
+            409,
+            f"This exact file was already uploaded as '{content_dup.file_name}'. Delete it first or choose Replace."
+        )
 
     _log(f"[UPLOAD] Uploading {len(file_bytes)} bytes to S3 key={s3_key} ...")
     await asyncio.to_thread(upload_to_s3, s3_key, file_bytes, content_type)
@@ -66,6 +104,7 @@ async def upload_document_file(
         file_type=ext,
         document_type=document_type,
         status="UPLOADED",
+        content_hash=content_hash,
     )
     db.add(doc)
     await db.flush()
@@ -122,6 +161,37 @@ async def upload_document(
     return DocumentUploadResponse(id=str(doc.id), upload_url=upload_url, s3_key=s3_key)
 
 
+@router.get("/check-duplicate/{file_name}")
+async def check_duplicate_by_filename(
+    file_name: str,
+    user: CurrentUser = None,
+    tenant_id: TenantId = None,
+    db: DB = None,
+):
+    """Check if a document with the same filename exists for this tenant."""
+    result = await db.execute(
+        select(Document).where(
+            Document.tenant_id == tenant_id,
+            Document.file_name == file_name,
+            Document.deleted_at.is_(None),
+        ).order_by(Document.created_at.desc())
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        return {
+            "is_duplicate": True,
+            "existing_document": {
+                "id": str(existing.id),
+                "file_name": existing.file_name,
+                "status": existing.status,
+                "created_at": existing.created_at.isoformat(),
+            }
+        }
+    
+    return {"is_duplicate": False}
+
+
 @router.post("/{document_id}/process")
 async def trigger_processing(
     document_id: uuid.UUID,
@@ -140,7 +210,7 @@ async def trigger_processing(
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
-    if doc.status not in ("UPLOADED", "FAILED", "PROCESSING"):
+    if doc.status not in ("UPLOADED", "FAILED", "PROCESSING", "DONE"):
         raise HTTPException(400, f"Document already in status {doc.status}")
 
     _log(f"[PROCESS] Running pipeline for {document_id} ({doc.file_name})")
@@ -222,5 +292,56 @@ async def delete_document(
         raise HTTPException(404, "Document not found")
 
     doc.deleted_at = datetime.utcnow()
+    
+    # Also soft-delete the canonical invoice and clear duplicate_hash
+    from app.models.invoice import CanonicalInvoice
+    ci_result = await db.execute(
+        select(CanonicalInvoice).where(CanonicalInvoice.document_id == document_id)
+    )
+    canonical = ci_result.scalar_one_or_none()
+    invoice_date = None
+    if canonical:
+        invoice_date = canonical.invoice_date
+        canonical.duplicate_hash = None
+        canonical.deleted_at = datetime.utcnow()
+    
+    # Also soft-delete related ledger transactions so they don't show in the ledger
+    from app.models.ledger import LedgerTransaction
+    txn_result = await db.execute(
+        select(LedgerTransaction).where(
+            LedgerTransaction.document_id == document_id,
+            LedgerTransaction.deleted_at.is_(None),
+        )
+    )
+    for txn in txn_result.scalars().all():
+        txn.deleted_at = datetime.utcnow()
+    
+    # Mark GST as stale so it gets recomputed without this invoice
+    if invoice_date:
+        from app.services.tax_service import mark_gst_stale
+        await mark_gst_stale(db, user.tenant_id, invoice_date)
+
+    # Recompute income tax estimate for the affected FY
+    try:
+        from app.services.tax_service import compute_income_tax_estimate
+        await compute_income_tax_estimate(db, user.tenant_id)
+    except Exception:
+        pass  # non-critical
+
     await log_action(db, user.tenant_id, user.id, "document.delete", "document", doc.id)
+
+    # Invalidate dashboard Redis cache
+    try:
+        redis = getattr(db, '_redis', None) or getattr(__import__('sys').modules.get('app.main', None), 'app', None)
+        # Simpler: just delete cache keys directly
+        import redis.asyncio as aioredis
+        from app.config import settings
+        r = await aioredis.from_url(settings.redis_url, decode_responses=True)
+        keys = await r.keys(f"dashboard:{user.tenant_id}:*")
+        if keys:
+            await r.delete(*keys)
+        await r.close()
+    except Exception:
+        pass
+
     return {"status": "deleted"}

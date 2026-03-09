@@ -24,27 +24,27 @@ export function formatDate(dateStr: string): string {
 
 export function statusColor(status: string): string {
   const map: Record<string, string> = {
-    UPLOADED: "bg-gray-100 text-gray-700",
-    PROCESSING: "bg-yellow-100 text-yellow-700",
-    EXTRACTED: "bg-blue-100 text-blue-700",
-    VALIDATED: "bg-indigo-100 text-indigo-700",
-    DONE: "bg-green-100 text-green-700",
-    FAILED: "bg-red-100 text-red-700",
-    APPROVED: "bg-green-100 text-green-700",
-    REJECTED: "bg-red-100 text-red-700",
-    PENDING: "bg-yellow-100 text-yellow-700",
-    AUTO_POSTED: "bg-green-100 text-green-700",
-    NEEDS_REVIEW: "bg-orange-100 text-orange-700",
-    CORRECTED: "bg-purple-100 text-purple-700",
+    UPLOADED: "bg-taxodo-subtle text-taxodo-muted",
+    PROCESSING: "bg-taxodo-warning/15 text-[#9b5b1f]",
+    EXTRACTED: "bg-taxodo-info/15 text-taxodo-info",
+    VALIDATED: "bg-taxodo-accent/25 text-taxodo-primary",
+    DONE: "bg-taxodo-success/15 text-taxodo-success",
+    FAILED: "bg-taxodo-danger/15 text-taxodo-danger",
+    APPROVED: "bg-taxodo-success/15 text-taxodo-success",
+    REJECTED: "bg-taxodo-danger/15 text-taxodo-danger",
+    PENDING: "bg-taxodo-warning/15 text-[#9b5b1f]",
+    AUTO_POSTED: "bg-taxodo-success/15 text-taxodo-success",
+    NEEDS_REVIEW: "bg-taxodo-warning/15 text-[#9b5b1f]",
+    CORRECTED: "bg-taxodo-info/15 text-taxodo-info",
   };
-  return map[status] || "bg-gray-100 text-gray-700";
+  return map[status] || "bg-taxodo-subtle text-taxodo-muted";
 }
 
 export function validationColor(status: string): string {
   const map: Record<string, string> = {
-    pass: "border-green-400 bg-green-50",
-    fail: "border-red-400 bg-red-50",
-    warn: "border-amber-400 bg-amber-50",
+    pass: "border-taxodo-success/50 bg-taxodo-success/10",
+    fail: "border-taxodo-danger/50 bg-taxodo-danger/10",
+    warn: "border-taxodo-warning/50 bg-taxodo-warning/15",
   };
-  return map[status] || "border-gray-200";
+  return map[status] || "border-taxodo-border";
 }

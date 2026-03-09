@@ -28,6 +28,7 @@ class Document(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str] = mapped_column(
         SAEnum(*DOCUMENT_STATUSES, name="document_status_enum"), default="UPLOADED"
     )
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     tenant = relationship("Tenant", back_populates="documents")
     uploader = relationship("User", lazy="selectin")

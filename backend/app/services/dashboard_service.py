@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, case
 
 from app.models.document import Document
+from app.models.invoice import CanonicalInvoice
 from app.models.ledger import LedgerTransaction, JournalLine, ChartOfAccounts
 from app.models.tax import GSTSummary
 from app.schemas.dashboard import (
     DashboardOverview, PipelineStatus, PnLItem,
-    ExpenseCategory, GSTTrackerItem, CashFlowItem,
+    ExpenseCategory, GSTTrackerItem, CashFlowItem, RecentInvoice,
 )
 
 
@@ -32,6 +33,8 @@ async def get_dashboard_overview(
     expenses = await _get_expenses_by_category(db, tenant_id, fy_start, fy_end)
     gst = await _get_gst_tracker(db, tenant_id, fy_start, fy_end)
     cashflow = await _get_cashflow(db, tenant_id, fy_start, fy_end)
+    receivables, payables = await _get_receivables_payables(db, tenant_id)
+    recent = await _get_recent_invoices(db, tenant_id)
 
     total_rev = sum(p.revenue for p in pnl)
     total_exp = sum(p.expenses for p in pnl)
@@ -48,16 +51,20 @@ async def get_dashboard_overview(
         total_invoices=pipeline.done,
         total_revenue=total_rev,
         total_expenses=total_exp,
+        net_profit=total_rev - total_exp,
         gst_liability=gst_liability,
+        total_receivables=receivables,
+        total_payables=payables,
         pipeline=pipeline,
         pnl=pnl,
         expenses_by_category=expenses,
         gst_tracker=gst,
         cashflow=cashflow,
+        recent_invoices=recent,
     )
 
     if redis:
-        await redis.set(cache_key, json.dumps(overview.model_dump(), default=str), ex=300)
+        await redis.set(cache_key, json.dumps(overview.model_dump(), default=str), ex=30)
 
     return overview
 
@@ -100,7 +107,8 @@ async def _get_pnl(db: AsyncSession, tenant_id: uuid.UUID, start: date, end: dat
     expense_q = (
         select(
             func.date_trunc("month", LedgerTransaction.transaction_date).label("period"),
-            func.coalesce(func.sum(JournalLine.debit), 0).label("amount"),
+            func.coalesce(func.sum(JournalLine.debit), 0).label("dr"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("cr"),
         )
         .select_from(JournalLine)
         .join(LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id)
@@ -118,7 +126,7 @@ async def _get_pnl(db: AsyncSession, tenant_id: uuid.UUID, start: date, end: dat
     exp_result = await db.execute(expense_q)
 
     rev_map = {str(r[0])[:7]: float(r[1]) for r in rev_result.all()}
-    exp_map = {str(r[0])[:7]: float(r[1]) for r in exp_result.all()}
+    exp_map = {str(r[0])[:7]: float(r[1]) - float(r[2]) for r in exp_result.all()}
 
     all_periods = sorted(set(list(rev_map.keys()) + list(exp_map.keys())))
     return [
@@ -138,7 +146,8 @@ async def _get_expenses_by_category(
     result = await db.execute(
         select(
             LedgerTransaction.assigned_category,
-            func.sum(JournalLine.debit).label("total"),
+            func.coalesce(func.sum(JournalLine.debit), 0).label("dr"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("cr"),
         )
         .select_from(JournalLine)
         .join(LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id)
@@ -151,15 +160,17 @@ async def _get_expenses_by_category(
         )
         .group_by(LedgerTransaction.assigned_category)
     )
-    rows = result.all()
-    grand_total = sum(float(r[1] or 0) for r in rows) or 1
+    rows = [(r[0], float(r[1] or 0) - float(r[2] or 0)) for r in result.all()]
+    # Filter out categories with zero or negative net (fully reversed)
+    rows = [(cat, amt) for cat, amt in rows if amt > 0]
+    grand_total = sum(amt for _, amt in rows) or 1
     return [
         ExpenseCategory(
-            category=r[0] or "Uncategorized",
-            amount=float(r[1] or 0),
-            percentage=round(float(r[1] or 0) / grand_total * 100, 1),
+            category=cat or "Uncategorized",
+            amount=amt,
+            percentage=round(amt / grand_total * 100, 1),
         )
-        for r in rows
+        for cat, amt in rows
     ]
 
 
@@ -187,12 +198,16 @@ async def _get_gst_tracker(
 async def _get_cashflow(
     db: AsyncSession, tenant_id: uuid.UUID, start: date, end: date,
 ) -> list[CashFlowItem]:
-    """Cash flow from cash/bank accounts."""
-    result = await db.execute(
+    """Cash flow derived from revenue (inflow) and expense (outflow) accounts.
+
+    Since payment tracking isn't implemented yet, we approximate cash flow
+    from the invoice-level revenue and expense postings per month.
+    """
+    # Inflow = credits to revenue accounts (Sales, BOS)
+    inflow_q = await db.execute(
         select(
             func.date_trunc("month", LedgerTransaction.transaction_date).label("period"),
-            func.coalesce(func.sum(JournalLine.debit), 0).label("inflow"),
-            func.coalesce(func.sum(JournalLine.credit), 0).label("outflow"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("inflow"),
         )
         .select_from(JournalLine)
         .join(LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id)
@@ -201,17 +216,102 @@ async def _get_cashflow(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
             LedgerTransaction.deleted_at.is_(None),
-            ChartOfAccounts.is_cash_or_bank.is_(True),
+            ChartOfAccounts.tally_group.in_(["Sales Accounts"]),
         )
         .group_by("period")
-        .order_by("period")
     )
+    inflows = {str(r[0])[:7]: float(r[1]) for r in inflow_q.all()}
+
+    # Outflow = net debits to expense accounts (DR - CR for credit note reversals)
+    outflow_q = await db.execute(
+        select(
+            func.date_trunc("month", LedgerTransaction.transaction_date).label("period"),
+            func.coalesce(func.sum(JournalLine.debit), 0).label("dr"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("cr"),
+        )
+        .select_from(JournalLine)
+        .join(LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id)
+        .join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id)
+        .where(
+            LedgerTransaction.tenant_id == tenant_id,
+            LedgerTransaction.transaction_date.between(start, end),
+            LedgerTransaction.deleted_at.is_(None),
+            ChartOfAccounts.tally_group.in_([
+                "Purchase Accounts", "Direct Expenses", "Indirect Expenses",
+            ]),
+        )
+        .group_by("period")
+    )
+    outflows = {str(r[0])[:7]: float(r[1]) - float(r[2]) for r in outflow_q.all()}
+
+    all_periods = sorted(set(list(inflows.keys()) + list(outflows.keys())))
     return [
         CashFlowItem(
-            period=str(r[0])[:7],
-            inflow=float(r[1]),
-            outflow=float(r[2]),
-            net=float(r[1]) - float(r[2]),
+            period=p,
+            inflow=inflows.get(p, 0),
+            outflow=outflows.get(p, 0),
+            net=inflows.get(p, 0) - outflows.get(p, 0),
         )
-        for r in result.all()
+        for p in all_periods
+    ]
+
+
+async def _get_receivables_payables(
+    db: AsyncSession, tenant_id: uuid.UUID,
+) -> tuple[float, float]:
+    """Get total receivables (Sundry Debtors balance) and payables (Sundry Creditors balance)."""
+    result = await db.execute(
+        select(
+            ChartOfAccounts.tally_group,
+            func.coalesce(func.sum(JournalLine.debit), 0).label("total_dr"),
+            func.coalesce(func.sum(JournalLine.credit), 0).label("total_cr"),
+        )
+        .select_from(JournalLine)
+        .join(LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id)
+        .join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id)
+        .where(
+            LedgerTransaction.tenant_id == tenant_id,
+            LedgerTransaction.deleted_at.is_(None),
+            ChartOfAccounts.tally_group.in_(["Sundry Debtors", "Sundry Creditors"]),
+        )
+        .group_by(ChartOfAccounts.tally_group)
+    )
+    receivables = 0.0
+    payables = 0.0
+    for row in result.all():
+        balance = float(row[1]) - float(row[2])
+        if row[0] == "Sundry Debtors":
+            receivables = balance  # Debit balance = money owed to us
+        elif row[0] == "Sundry Creditors":
+            payables = abs(balance)  # Credit balance = money we owe
+    return receivables, payables
+
+
+async def _get_recent_invoices(
+    db: AsyncSession, tenant_id: uuid.UUID, limit: int = 8,
+) -> list[RecentInvoice]:
+    """Get most recent canonical invoices."""
+    result = await db.execute(
+        select(CanonicalInvoice)
+        .where(
+            CanonicalInvoice.tenant_id == tenant_id,
+            CanonicalInvoice.deleted_at.is_(None),
+        )
+        .order_by(CanonicalInvoice.created_at.desc())
+        .limit(limit)
+    )
+    return [
+        RecentInvoice(
+            id=str(inv.id),
+            document_id=str(inv.document_id),
+            invoice_number=inv.invoice_number or "—",
+            vendor_name=inv.vendor_name,
+            buyer_name=inv.buyer_name,
+            document_type=inv.document_type,
+            transaction_nature=inv.transaction_nature,
+            total=float(inv.total),
+            invoice_date=str(inv.invoice_date),
+            status=inv.validation_status,
+        )
+        for inv in result.scalars().all()
     ]

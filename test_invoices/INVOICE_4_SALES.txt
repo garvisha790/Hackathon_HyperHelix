@@ -1,0 +1,71 @@
+═══════════════════════════════════════════════════════════════
+                      TAX INVOICE
+═══════════════════════════════════════════════════════════════
+
+Invoice No: SALES-2026-001                  Date: 06/03/2026
+GSTIN: 29ABCDE1234F1Z5                      PAN: ABCDE1234F
+
+From:
+DEMO MSME PVT LTD
+456 Brigade Road, Richmond Town
+Bangalore, Karnataka - 560025
+Phone: +91 9988776655
+Email: accounts@demomsme.com
+
+To:
+RELIANCE RETAIL LIMITED
+GSTIN: 29AABCR1234A1Z5
+Corporate Office, Indiranagar
+Bangalore, Karnataka - 560038
+Phone: +91 8899001122
+
+═══════════════════════════════════════════════════════════════
+SALES INVOICE - PROFESSIONAL SERVICES
+═══════════════════════════════════════════════════════════════
+
+S.No  Description              HSN      Qty    Rate       Amount
+───────────────────────────────────────────────────────────────
+1     IT Consulting Services  998314    40    3,000.00  120,000
+2     Software Development    998315    20    4,000.00   80,000
+───────────────────────────────────────────────────────────────
+
+                                       Subtotal:    ₹2,00,000.00
+                                       CGST @ 9%:   ₹  18,000.00
+                                       SGST @ 9%:   ₹  18,000.00
+                                       ───────────────────────
+                                       GRAND TOTAL: ₹2,36,000.00
+
+Amount in Words: Two Lakh Thirty Six Thousand Rupees Only
+
+Service Period: February 2026
+PO Reference: PO/REL/2026/4567
+SAC Code: 998314 (IT Services)
+
+───────────────────────────────────────────────────────────────
+PAYMENT TERMS
+───────────────────────────────────────────────────────────────
+Due Date: 31/03/2026 (25 days from invoice date)
+Payment Terms: Net 30 days from invoice date
+
+Our Bank Details:
+Bank Name: ICICI Bank
+Account No: 100200300400
+IFSC Code: ICIC0005678
+Branch: Brigade Road, Bangalore
+Account Type: Current Account
+
+───────────────────────────────────────────────────────────────
+TAX DECLARATION
+───────────────────────────────────────────────────────────────
+We hereby certify that our GSTIN 29ABCDE1234F1Z5 is in order.
+This invoice shows the actual price of goods/services described
+and all particulars are true and correct.
+
+                    For DEMO MSME PVT LTD
+
+
+                    Authorized Signatory
+                    (Managing Director)
+
+This is a system-generated invoice
+═══════════════════════════════════════════════════════════════

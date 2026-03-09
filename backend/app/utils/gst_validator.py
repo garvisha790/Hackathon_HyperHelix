@@ -74,6 +74,28 @@ def extract_state_from_gstin(gstin: str) -> str | None:
     return None
 
 
+def normalize_state_to_code(state_input: str | None) -> str | None:
+    """Convert state name or code to 2-digit state code.
+    Handles: '07' -> '07', 'Delhi' -> '07', 'New Delhi' -> '07'
+    """
+    if not state_input or not state_input.strip():
+        return None
+    val = state_input.strip()
+    # Already a 2-digit code
+    if len(val) == 2 and val.isdigit():
+        return val if val in INDIAN_STATE_CODES else None
+    # Try matching by name (case-insensitive, partial match)
+    val_lower = val.lower()
+    for code, name in INDIAN_STATE_CODES.items():
+        if name.lower() == val_lower:
+            return code
+    # Try partial/contains match (e.g. 'New Delhi' -> 'Delhi')
+    for code, name in INDIAN_STATE_CODES.items():
+        if val_lower in name.lower() or name.lower() in val_lower:
+            return code
+    return None
+
+
 def is_interstate(supplier_state: str | None, place_of_supply: str | None) -> bool:
     """Determine if transaction is inter-state (IGST) or intra-state (CGST+SGST)."""
     if not supplier_state or not place_of_supply:

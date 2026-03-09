@@ -1,0 +1,17 @@
+<svg width="250" height="50" viewBox="0 0 250 50" xmlns="http://www.w3.org/2000/svg">
+  <!-- Logo Icon -->
+  <g transform="translate(4, 5)">
+    <!-- Slanted Deep Teal Bar -->
+    <polygon points="12,4 2,36 12,36 22,4" fill="#0B3C49" />
+    
+    <!-- Rupee symbol perfectly centered natively -->
+    <text x="17" y="21" dominant-baseline="central" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="24" fill="#FFB347">₹</text>
+
+    <!-- Slanted Mint Bar -->
+    <polygon points="28,16 20,36 30,36 38,16" fill="#6AD4B3" />
+  </g>
+  <!-- Wordmark -->
+  <text x="50" y="34" font-family="'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="28" fill="#0B3C49" letter-spacing="-0.5">
+    taxodo<tspan fill="#167C8A" font-weight="700">.ai</tspan>
+  </text>
+</svg>

@@ -1,0 +1,15 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Transparent Background -->
+  
+  <!-- Graphic -->
+  <g transform="translate(60, 60) scale(11)">
+    <!-- Slanted White Bar -->
+    <polygon points="12,4 2,36 12,36 22,4" fill="#FFFFFF" />
+    
+    <!-- Rupee Accent (Amber) sitting in negative space -->
+    <text x="22" y="21" dominant-baseline="central" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="24" fill="#FFB347">₹</text>
+
+    <!-- Slanted Mint Bar (Shifted) -->
+    <polygon points="32,16 24,36 34,36 42,16" fill="#6AD4B3" />
+  </g>
+</svg>

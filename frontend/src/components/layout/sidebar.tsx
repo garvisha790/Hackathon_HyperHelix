@@ -4,9 +4,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FileText, BookOpen, Receipt,
-  BarChart3, MessageSquare, Settings, LogOut, Shield,
+  BarChart3, MessageSquare, Settings, LogOut, Shield, ChevronLeft, ChevronRight, User
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import Image from "next/image";
+import { UserAvatar } from "@/components/profile/user-avatar";
 
 const NAV_ITEMS = [
   { href: "/dashboard/overview", label: "Dashboard", icon: LayoutDashboard },
@@ -18,50 +20,135 @@ const NAV_ITEMS = [
   { href: "/dashboard/audit", label: "Audit Log", icon: Shield, ownerOnly: true },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isCollapsed: boolean;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export function Sidebar({ isCollapsed, setIsCollapsed }: SidebarProps) {
   const pathname = usePathname();
-  const { role, logout } = useAuth();
+  const { role, logout, userProfile } = useAuth();
 
   return (
-    <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-gray-200 bg-white">
-      <div className="flex h-16 items-center gap-2 border-b px-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white font-bold text-sm">
-          CA
-        </div>
-        <div>
-          <h1 className="text-sm font-semibold text-gray-900">Digital CA</h1>
-          <p className="text-xs text-gray-500">AI-Powered Finance</p>
-        </div>
+    <aside
+      className={cn(
+        "fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-taxodo-primary-hover bg-taxodo-primary shadow-xl transition-all duration-300 ease-in-out",
+        isCollapsed ? "w-20" : "w-64"
+      )}
+    >
+      <div className={cn("flex h-[72px] items-center border-b border-white/10 relative", isCollapsed ? "justify-center px-4" : "px-6 justify-between")}>
+        {!isCollapsed ? (
+          <Image
+            src="/icons/taxodo_logo_white.svg"
+            alt="Taxodo AI"
+            width={160}
+            height={32}
+            className="h-8 w-auto drop-shadow-sm"
+          />
+        ) : (
+          <Image
+            src="/icons/taxodo_app_icon.svg"
+            alt="Taxodo"
+            width={32}
+            height={32}
+            className="h-8 w-8"
+          />
+        )}
+
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-3 top-6 flex h-6 w-6 items-center justify-center rounded-full border border-taxodo-border bg-white text-taxodo-muted shadow-sm hover:text-taxodo-primary"
+        >
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1.5 px-3 py-6 overflow-hidden">
+        {!isCollapsed && (
+          <div className="mb-3 px-3 text-[11px] font-bold uppercase tracking-wider text-white/40">
+            Main Menu
+          </div>
+        )}
         {NAV_ITEMS.filter((item) => !item.ownerOnly || role === "owner").map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
               href={item.href}
+              title={isCollapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "group flex items-center rounded-md py-2.5 text-[15px] font-medium transition-all duration-150 ease-out",
+                isCollapsed ? "justify-center px-0" : "gap-3 px-3",
                 isActive
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                  ? "bg-taxodo-secondary text-white shadow-sm"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
               )}
             >
-              <item.icon className="h-5 w-5" />
-              {item.label}
+              <item.icon className={cn(
+                "h-5 w-5 transition-colors flex-shrink-0",
+                isActive ? "text-white" : "text-white/50 group-hover:text-white"
+              )} />
+              {!isCollapsed && <span>{item.label}</span>}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t p-3">
+      {/* User Profile Section */}
+      <div className="border-t border-white/10 px-3 py-3">
+        <Link
+          href="/dashboard/settings/profile"
+          title={isCollapsed ? `${userProfile?.name || userProfile?.email}` : undefined}
+          className={cn(
+            "group flex w-full items-center rounded-md py-2.5 transition-all duration-150 hover:bg-white/10",
+            isCollapsed ? "justify-center px-0" : "gap-3 px-3"
+          )}
+        >
+          {isCollapsed ? (
+            <UserAvatar
+              name={userProfile?.name}
+              email={userProfile?.email}
+              size="sm"
+              showTooltip={true}
+            />
+          ) : (
+            <>
+              <UserAvatar
+                name={userProfile?.name}
+                email={userProfile?.email}
+                size="md"
+              />
+              <div className="flex-1 overflow-hidden">
+                <div className="truncate text-sm font-medium text-white">
+                  {userProfile?.name || "User"}
+                </div>
+                <div className="truncate text-xs text-white/60">
+                  {userProfile?.email}
+                </div>
+                <div className="mt-0.5">
+                  <span className="inline-flex items-center rounded-full bg-taxodo-secondary/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-taxodo-accent">
+                    {userProfile?.role || "user"}
+                  </span>
+                </div>
+              </div>
+              <User className="h-4 w-4 text-white/40 transition-colors group-hover:text-white/70 flex-shrink-0" />
+            </>
+          )}
+        </Link>
+      </div>
+
+      {/* Logout Button */}
+      <div className="border-t border-white/10 p-3">
         <button
           onClick={logout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          title={isCollapsed ? "Sign Out" : undefined}
+          className={cn(
+            "group flex w-full items-center rounded-md py-2.5 text-[15px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white",
+            isCollapsed ? "justify-center px-0" : "gap-3 px-3"
+          )}
         >
-          <LogOut className="h-5 w-5" />
-          Sign Out
+          <LogOut className="h-5 w-5 text-white/50 transition-colors group-hover:text-white flex-shrink-0" />
+          {!isCollapsed && <span>Sign Out</span>}
         </button>
       </div>
     </aside>

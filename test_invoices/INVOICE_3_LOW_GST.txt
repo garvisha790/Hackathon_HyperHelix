@@ -1,0 +1,59 @@
+═══════════════════════════════════════════════════════════════
+                      TAX INVOICE
+═══════════════════════════════════════════════════════════════
+
+Invoice No: FS-2026-789                     Date: 08/03/2026
+GSTIN: 29AABCF5678A1Z5                      PAN: AABCF5678A
+
+From:
+FRESH FOODS SUPPLIERS
+45 Market Road, Yelahanka
+Bangalore, Karnataka - 560064
+Phone: +91 9876512340
+Email: orders@freshfoods.com
+
+To:
+DEMO MSME PVT LTD (Canteen Supply)
+GSTIN: 29ABCDE1234F1Z5
+456 Brigade Road, Richmond Town
+Bangalore, Karnataka - 560025
+Phone: +91 9988776655
+
+═══════════════════════════════════════════════════════════════
+BILL OF SUPPLY - ESSENTIAL FOOD ITEMS (GST @ 5%)
+═══════════════════════════════════════════════════════════════
+
+S.No  Description              HSN      Qty    Rate       Amount
+───────────────────────────────────────────────────────────────
+1     Rice (25kg bags)        10063     20     400.00    8,000
+2     Wheat Flour (10kg)      11010     30     300.00    9,000
+3     Cooking Oil (1L)        15141     15     200.00    3,000
+───────────────────────────────────────────────────────────────
+
+                                       Subtotal:    ₹ 20,000.00
+                                       CGST @ 2.5%: ₹    500.00
+                                       SGST @ 2.5%: ₹    500.00
+                                       ───────────────────────
+                                       GRAND TOTAL: ₹ 21,000.00
+
+Amount in Words: Twenty One Thousand Rupees Only
+
+Note: Essential food items attract 5% GST as per notification
+
+───────────────────────────────────────────────────────────────
+PAYMENT TERMS
+───────────────────────────────────────────────────────────────
+Due Date: 15/03/2026 (7 days from invoice date)
+Payment: Cash on Delivery or Bank Transfer
+
+Bank Details:
+Bank Name: State Bank of India
+Account No: 456789123456
+IFSC Code: SBIN0001234
+Branch: Yelahanka, Bangalore
+
+───────────────────────────────────────────────────────────────
+                    For FRESH FOODS SUPPLIERS
+
+                    Authorized Signatory
+═══════════════════════════════════════════════════════════════

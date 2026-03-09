@@ -1,17 +1,20 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 
 from app.dependencies import CurrentUser, TenantId, DB
 from app.models.ledger import LedgerTransaction, JournalLine, ChartOfAccounts, Correction
 from app.models.invoice import CanonicalInvoice
+from app.models.tenant import Tenant
 from app.schemas.ledger import (
     LedgerTransactionResponse, LedgerTransactionListResponse,
     JournalLineResponse, TransactionEditRequest, AccountTreeResponse,
 )
 from app.services.posting_engine import post_invoice
 from app.services.tax_service import mark_gst_stale
+from app.services.pdf_service import generate_ledger_pdf
 from app.middleware.audit import log_action
 
 router = APIRouter()
@@ -181,6 +184,39 @@ async def recompute_transaction(
     return _txn_response(txn)
 
 
+@router.delete("/transactions/{txn_id}")
+async def delete_transaction(
+    txn_id: uuid.UUID,
+    user: CurrentUser = None,
+    tenant_id: TenantId = None,
+    db: DB = None,
+):
+    """Hard delete a ledger transaction and its journal lines."""
+    result = await db.execute(
+        select(LedgerTransaction).where(
+            LedgerTransaction.id == txn_id,
+            LedgerTransaction.tenant_id == tenant_id,
+            LedgerTransaction.deleted_at.is_(None),
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+
+    # Log before deletion (since we won't have the record after)
+    await log_action(db, tenant_id, user.id, "ledger.delete", "ledger_transaction", txn.id)
+    
+    # Hard delete journal lines first (FK constraint)
+    for line in txn.journal_lines:
+        await db.delete(line)
+    
+    # Then delete the transaction
+    await db.delete(txn)
+    await db.flush()
+    
+    return {"status": "deleted", "transaction_id": str(txn_id)}
+
+
 def _txn_response(txn: LedgerTransaction) -> LedgerTransactionResponse:
     return LedgerTransactionResponse(
         id=str(txn.id),
@@ -216,4 +252,65 @@ def _build_account_tree(acc: ChartOfAccounts) -> AccountTreeResponse:
         is_system=acc.is_system,
         is_cash_or_bank=acc.is_cash_or_bank,
         children=[_build_account_tree(child) for child in (acc.children or []) if not child.deleted_at],
+    )
+
+
+@router.get("/export/pdf")
+async def export_ledger_pdf(
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    tenant_id: TenantId = None,
+    db: DB = None,
+):
+    """Export ledger transactions as a professional PDF."""
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+
+    query = select(LedgerTransaction).where(
+        LedgerTransaction.tenant_id == tenant_id,
+        LedgerTransaction.deleted_at.is_(None),
+    )
+    parsed_from = None
+    parsed_to = None
+    if date_from:
+        parsed_from = date.fromisoformat(date_from)
+        query = query.where(LedgerTransaction.transaction_date >= parsed_from)
+    if date_to:
+        parsed_to = date.fromisoformat(date_to)
+        query = query.where(LedgerTransaction.transaction_date <= parsed_to)
+
+    query = query.order_by(LedgerTransaction.transaction_date.desc())
+    result = await db.execute(query)
+    txns = result.scalars().all()
+
+    txn_dicts = []
+    for t in txns:
+        txn_dicts.append({
+            "transaction_date": t.transaction_date,
+            "description": t.description,
+            "journal_lines": [
+                {
+                    "account_name": jl.account.name if jl.account else None,
+                    "account_code": jl.account.code if jl.account else None,
+                    "debit": float(jl.debit),
+                    "credit": float(jl.credit),
+                }
+                for jl in t.journal_lines
+            ],
+        })
+
+    pdf_bytes = generate_ledger_pdf(
+        company_name=tenant.name,
+        gstin=tenant.gstin,
+        transactions=txn_dicts,
+        date_from=parsed_from,
+        date_to=parsed_to,
+    )
+
+    filename = f"Ledger_{tenant.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -1,0 +1,44 @@
+{
+  "family": "taxodo-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::213857329904:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "213857329904.dkr.ecr.ap-south-1.amazonaws.com/taxodo-frontend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "BACKEND_URL",
+          "value": "http://taxodo-alb-1657753455.ap-south-1.elb.amazonaws.com"
+        },
+        {
+          "name": "NEXT_PUBLIC_API_URL",
+          "value": "http://taxodo-alb-1657753455.ap-south-1.elb.amazonaws.com"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/taxodo-frontend",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

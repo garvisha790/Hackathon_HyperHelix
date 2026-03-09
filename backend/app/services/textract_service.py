@@ -3,6 +3,7 @@ import time
 import logging
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from app.config import get_settings
 
 settings = get_settings()
@@ -105,14 +106,19 @@ def parse_textract_expense(raw_response: dict) -> dict:
     for doc in raw_response.get("ExpenseDocuments", []):
         for field in doc.get("SummaryFields", []):
             field_type = field.get("Type", {}).get("Text", "").upper()
+            label_text = field.get("LabelDetection", {}).get("Text", "").upper()
             value = field.get("ValueDetection", {}).get("Text", "")
             confidence = field.get("ValueDetection", {}).get("Confidence", 0)
 
-            structured["raw_fields"][field_type] = {
+            # Keep raw fields for confidence rendering
+            # We append the label text to the key to avoid overwriting multiple TAX fields
+            raw_key = f"{field_type}_{label_text}".strip("_") if field_type == "TAX" else field_type
+            structured["raw_fields"][raw_key] = {
                 "value": value,
                 "confidence": confidence,
             }
 
+            key = None
             mapping = {
                 "VENDOR_NAME": "vendor_name",
                 "NAME": "vendor_name",
@@ -121,22 +127,40 @@ def parse_textract_expense(raw_response: dict) -> dict:
                 "INVOICE_RECEIPT_DATE": "invoice_date",
                 "SUBTOTAL": "subtotal",
                 "TOTAL": "total",
-                "TAX": "igst",
             }
 
             if field_type in mapping:
                 key = mapping[field_type]
-                if key in ("subtotal", "total", "igst", "cgst", "sgst"):
-                    try:
-                        cleaned = value.replace(",", "").replace("₹", "").replace("Rs", "").strip()
-                        structured[key] = float(cleaned)
-                    except (ValueError, TypeError):
-                        pass
+            elif field_type == "TAX":
+                if "CGST" in label_text:
+                    key = "cgst"
+                elif "SGST" in label_text:
+                    key = "sgst"
+                elif "IGST" in label_text:
+                    key = "igst"
+                else:
+                    # Default generic tax to IGST if we can't determine
+                    key = "igst"
+            elif field_type in ("OTHER", "AMOUNT", "AMOUNT_PAID", "AMOUNT_DUE"):
+                # Handle GST fields misclassified by Textract (e.g. "CGST Reversal" on credit notes)
+                if "CGST" in label_text:
+                    key = "cgst"
+                elif "SGST" in label_text:
+                    key = "sgst"
+                elif "IGST" in label_text:
+                    key = "igst"
+
+            if key:
+                if key in ("subtotal", "total", "igst", "cgst", "sgst", "cess"):
+                    val_float = _parse_currency(value)
+                    if key in ("cgst", "sgst", "igst", "cess"):
+                        structured[key] += val_float  # aggregate multiple tax lines
+                    else:
+                        structured[key] = val_float
                 else:
                     structured[key] = value
 
             if "GSTIN" in field_type or "GST" in field_type:
-                import re
                 gstin_match = re.search(r"[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]", value)
                 if gstin_match:
                     gstin = gstin_match.group()
@@ -148,29 +172,140 @@ def parse_textract_expense(raw_response: dict) -> dict:
         for line_item_group in doc.get("LineItemGroups", []):
             for line_item in line_item_group.get("LineItems", []):
                 item = {"description": "", "qty": 1, "rate": 0, "taxable_value": 0, "hsn_sac": None}
+                field_types_found = []
+                
                 for expense_field in line_item.get("LineItemExpenseFields", []):
                     ft = expense_field.get("Type", {}).get("Text", "").upper()
                     val = expense_field.get("ValueDetection", {}).get("Text", "")
+                    field_types_found.append(ft)
 
-                    if ft in ("ITEM", "DESCRIPTION", "PRODUCT_CODE"):
+                    # HSN/SAC field extraction
+                    if ft in ("HSN", "HSN_CODE", "HSN/SAC", "SAC", "SAC_CODE"):
+                        hsn_match = re.search(r'\d+', val)
+                        if hsn_match:
+                            item["hsn_sac"] = hsn_match.group()
+                    
+                    # PRODUCT_CODE smart routing: if numeric (4-8 digits) → HSN, else → description
+                    elif ft == "PRODUCT_CODE":
+                        if val and re.match(r'^\d{4,8}$', val.strip()):
+                            item["hsn_sac"] = val.strip()
+                        else:
+                            item["description"] = val
+                    
+                    # Description fields
+                    elif ft in ("ITEM", "DESCRIPTION"):
                         item["description"] = val
-                    elif ft == "QUANTITY":
+                    
+                    # Quantity field variants
+                    elif ft in ("QUANTITY", "QTY", "QTY."):
                         try:
-                            item["qty"] = float(val.replace(",", ""))
+                            qty_str = val.replace(",", "")
+                            qty_match = re.search(r'[\d.]+', qty_str)
+                            if qty_match:
+                                qty_val = float(qty_match.group())
+                                # Exclude GST rates (5, 12, 18, 28) from quantity
+                                if qty_val not in (5.0, 12.0, 18.0, 28.0) and qty_val < 100:
+                                    item["qty"] = qty_val
                         except (ValueError, TypeError):
                             pass
+                    
+                    # Price fields
                     elif ft in ("UNIT_PRICE", "PRICE"):
-                        try:
-                            item["rate"] = float(val.replace(",", "").replace("₹", "").strip())
-                        except (ValueError, TypeError):
-                            pass
+                        rate = _parse_currency(val)
+                        if rate > 0:
+                            item["rate"] = rate
+                    
+                    # Total fields
                     elif ft == "EXPENSE_ROW_TOTAL":
-                        try:
-                            item["taxable_value"] = float(val.replace(",", "").replace("₹", "").strip())
-                        except (ValueError, TypeError):
-                            pass
+                        taxable = _parse_currency(val)
+                        if taxable > 0:
+                            item["taxable_value"] = taxable
+                    
+                    # OTHER field inference
+                    elif ft == "OTHER" and val:
+                        # Check if it's a 4-8 digit number (likely HSN)
+                        if not item["hsn_sac"] and re.match(r'^\d{4,8}$', val.strip()):
+                            item["hsn_sac"] = val.strip()
+                        # Check if it's quantity (e.g., "5 Nos", "2 Kgs")
+                        elif re.search(r'\d+\s*(nos|kgs|units|pcs|items)', val, re.IGNORECASE):
+                            qty_match = re.search(r'(\d+)', val)
+                            if qty_match:
+                                try:
+                                    qty_val = float(qty_match.group(1))
+                                    if qty_val not in (5.0, 12.0, 18.0, 28.0) and qty_val < 100:
+                                        item["qty"] = qty_val
+                                except (ValueError, TypeError):
+                                    pass
 
                 if item["description"] or item["taxable_value"]:
                     structured["line_items"].append(item)
+
+    # ── Post-extraction: text-based GST fallback for credit/debit notes ──
+    # When Textract misses GST (returns 0), extract from raw LINE blocks
+    if structured["cgst"] == 0 and structured["sgst"] == 0 and structured["igst"] == 0:
+        all_text = ""
+        for doc in raw_response.get("ExpenseDocuments", []):
+            for block in doc.get("Blocks", []):
+                if block.get("BlockType") == "LINE":
+                    all_text += block.get("Text", "") + "\n"
+        # Extract standalone lines with tax labels and amounts
+        # Match patterns like "CGST Reversal  9000", "CGST 9%  9000", "CGST  4500"
+        # Captures the LAST number on the line (the amount), skipping rate percentages
+        for line in all_text.split("\n"):
+            line_upper = line.strip().upper()
+            if not line_upper:
+                continue
+            # Find all numbers on this line (excluding percentages)
+            amounts = re.findall(r'(?<!\d)(\d[\d,]*\.?\d*)(?!\s*%)', line)
+            if not amounts:
+                continue
+            # Use the last numeric value (typically the amount, not rate %)
+            amount_val = _parse_currency(amounts[-1])
+            if amount_val <= 0:
+                continue
+            if "CGST" in line_upper and "SGST" not in line_upper and "IGST" not in line_upper and structured["cgst"] == 0:
+                structured["cgst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found CGST={amount_val} from line: {line.strip()}")
+            elif "SGST" in line_upper and "CGST" not in line_upper and "IGST" not in line_upper and structured["sgst"] == 0:
+                structured["sgst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found SGST={amount_val} from line: {line.strip()}")
+            elif "IGST" in line_upper and "CGST" not in line_upper and "SGST" not in line_upper and structured["igst"] == 0:
+                structured["igst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found IGST={amount_val} from line: {line.strip()}")
+
+    # ── Post-extraction sanity checks ──
+    total = structured["total"]
+    subtotal = structured["subtotal"]
+    taxes = structured["cgst"] + structured["sgst"] + structured["igst"] + structured["cess"]
+
+    # 1. If we have total and taxes, derive correct subtotal
+    if total > 0 and taxes > 0:
+        computed_subtotal = round(total - taxes, 2)
+        if computed_subtotal > 0:
+            if subtotal == 0 or (subtotal < taxes and computed_subtotal > subtotal * 5):
+                logger.info(f"[TEXTRACT] Fixing subtotal: OCR={subtotal}, computed={computed_subtotal}")
+                structured["subtotal"] = computed_subtotal
+            elif abs(subtotal - total) < 0.01:
+                logger.info(f"[TEXTRACT] Fixing subtotal: was same as total ({subtotal}), computed={computed_subtotal}")
+                structured["subtotal"] = computed_subtotal
+
+    # 2. If subtotal is still 0, try line items
+    if structured["subtotal"] == 0 and total > 0:
+        line_sum = sum(li.get("taxable_value", 0) or li.get("rate", 0) * li.get("qty", 1)
+                       for li in structured["line_items"] if isinstance(li, dict))
+        if line_sum > 0:
+            structured["subtotal"] = round(line_sum, 2)
+            logger.info(f"[TEXTRACT] Subtotal from line items: {structured['subtotal']}")
+
+    # 3. If total is 0 but subtotal + taxes exist, compute total
+    if structured["total"] == 0 and structured["subtotal"] > 0:
+        structured["total"] = round(structured["subtotal"] + taxes, 2)
+        logger.info(f"[TEXTRACT] Computed total: {structured['total']}")
+
+    # 4. Last resort: if subtotal is still 0 and total > 0 and taxes == 0,
+    #    subtotal = total (bill of supply / no-GST scenario)
+    if structured["subtotal"] == 0 and structured["total"] > 0:
+        structured["subtotal"] = structured["total"]
+        logger.info(f"[TEXTRACT] Setting subtotal=total={structured['total']} (no taxes detected)")
 
     return structured

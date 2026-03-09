@@ -1,11 +1,4 @@
-"""AWS Textract integration using AnalyzeExpense API optimized for invoices.
-
-Strategy:
-  1. Try synchronous AnalyzeExpense with raw bytes (works for single-page docs).
-  2. If Textract rejects the bytes (multi-page PDF → UnsupportedDocumentException),
-     fall back to the async StartExpenseAnalysis API using the S3 reference.
-     We poll until the job is SUCCEEDED or FAILED (max ~120 s).
-"""
+"""AWS Textract integration using AnalyzeExpense API optimized for invoices."""
 import time
 import logging
 import boto3
@@ -15,9 +8,6 @@ from app.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-
-_POLL_INTERVAL = 3   # seconds between GetExpenseAnalysis calls
-_POLL_TIMEOUT  = 120 # maximum seconds to wait for async job
 
 
 def _get_textract_client():
@@ -30,28 +20,12 @@ def _get_textract_client():
     )
 
 
-def _get_s3_client():
-    """Return an S3 client for downloading document bytes."""
-    from app.utils.s3 import _get_s3_client as s3_client_factory
-    return s3_client_factory()
-
-
-def _analyze_expense_sync(file_bytes: bytes) -> dict:
-    """Synchronous AnalyzeExpense – works for single-page PDFs and images."""
-    client = _get_textract_client()
-    return client.analyze_expense(Document={"Bytes": file_bytes})
-
-
 def _analyze_expense_async(s3_key: str) -> dict:
-    """
-    Async StartExpenseAnalysis – handles multi-page PDFs via S3 reference.
-    Polls until the job finishes, then aggregates all pages into one response
-    that matches the synchronous AnalyzeExpense response shape.
-    """
+    """Async Textract job for multi-page PDFs. Polls until complete (max 60s)."""
     client = _get_textract_client()
+    logger.info(f"[TEXTRACT] Starting async expense analysis for {s3_key}")
 
-    logger.info("[Textract] Starting async expense analysis job for key=%s", s3_key)
-    start_resp = client.start_expense_analysis(
+    job = client.start_expense_analysis(
         DocumentLocation={
             "S3Object": {
                 "Bucket": settings.s3_bucket_name,
@@ -59,95 +33,54 @@ def _analyze_expense_async(s3_key: str) -> dict:
             }
         }
     )
-    job_id = start_resp["JobId"]
-    logger.info("[Textract] Async job started: JobId=%s", job_id)
+    job_id = job["JobId"]
+    logger.info(f"[TEXTRACT] Async job started: {job_id}")
 
-    # Poll for completion
-    deadline = time.time() + _POLL_TIMEOUT
-    all_expense_docs: list = []
-    next_token = None
-
-    while time.time() < deadline:
-        time.sleep(_POLL_INTERVAL)
-
-        kwargs: dict = {"JobId": job_id}
-        if next_token:
-            kwargs["NextToken"] = next_token
-
-        resp = client.get_expense_analysis(**kwargs)
-        status = resp.get("JobStatus")
-        logger.info("[Textract] Polling job %s → status=%s", job_id, status)
-
-        if status == "FAILED":
-            raise RuntimeError(
-                f"Textract async job {job_id} FAILED: "
-                f"{resp.get('StatusMessage', 'No message')}"
-            )
+    # Poll with backoff — max 60 seconds
+    for attempt in range(12):
+        time.sleep(5)
+        result = client.get_expense_analysis(JobId=job_id)
+        status = result["JobStatus"]
+        logger.info(f"[TEXTRACT] Job {job_id} status: {status} (attempt {attempt + 1})")
 
         if status == "SUCCEEDED":
-            all_expense_docs.extend(resp.get("ExpenseDocuments", []))
-            next_token = resp.get("NextToken")
-            # Fetch remaining pages of results
+            # Merge all pages into a single response structure
+            all_docs = result.get("ExpenseDocuments", [])
+            # Fetch remaining pages if paginated
+            next_token = result.get("NextToken")
             while next_token:
-                time.sleep(0.5)
-                page_resp = client.get_expense_analysis(JobId=job_id, NextToken=next_token)
-                all_expense_docs.extend(page_resp.get("ExpenseDocuments", []))
-                next_token = page_resp.get("NextToken")
-            break
-    else:
-        raise TimeoutError(
-            f"Textract async job {job_id} did not complete within {_POLL_TIMEOUT}s"
-        )
+                page = client.get_expense_analysis(JobId=job_id, NextToken=next_token)
+                all_docs.extend(page.get("ExpenseDocuments", []))
+                next_token = page.get("NextToken")
+            logger.info(f"[TEXTRACT] Async job complete — {len(all_docs)} expense documents")
+            return {"ExpenseDocuments": all_docs}
 
-    logger.info(
-        "[Textract] Async job %s succeeded. Pages/docs=%d", job_id, len(all_expense_docs)
-    )
-    # Return a response in the same shape as synchronous AnalyzeExpense
-    return {"ExpenseDocuments": all_expense_docs}
+        if status == "FAILED":
+            raise RuntimeError(f"Textract async job failed: {result.get('StatusMessage', 'unknown')}")
+
+    raise TimeoutError(f"Textract async job {job_id} did not complete within 60s")
 
 
 def analyze_expense(s3_key: str) -> dict:
-    """
-    Smart entry point: try synchronous first (bytes), fall back to async (S3).
+    """Call Textract AnalyzeExpense on an S3 object.
 
-    - Single-page PDFs / images → synchronous bytes-based call (fast).
-    - Multi-page PDFs           → async job via S3 reference + polling.
+    Tries the synchronous API first (fast, single-page).
+    Falls back to asynchronous API for multi-page PDFs.
     """
-    from app.utils.s3 import get_s3_object_bytes
-
-    # Attempt 1: synchronous with bytes
+    client = _get_textract_client()
     try:
-        file_bytes = get_s3_object_bytes(s3_key)
-        logger.info("[Textract] Trying sync AnalyzeExpense (%d bytes) …", len(file_bytes))
-        return _analyze_expense_sync(file_bytes)
-    except ClientError as e:
-        code = e.response["Error"]["Code"]
-        if code != "UnsupportedDocumentException":
-            raise  # re-raise unexpected errors
-        logger.warning(
-            "[Textract] Sync AnalyzeExpense failed with %s — "
-            "falling back to async StartExpenseAnalysis for multi-page PDF.",
-            code,
+        response = client.analyze_expense(
+            Document={
+                "S3Object": {
+                    "Bucket": settings.s3_bucket_name,
+                    "Name": s3_key,
+                }
+            }
         )
-
-    # Attempt 2: async via S3 reference
-    return _analyze_expense_async(s3_key)
-
-
-import re
-
-def _parse_currency(val: str) -> float:
-    """Robustly extract float from currency strings like 'Rs. 404.00'."""
-    if not val:
-        return 0.0
-    # Strip common prefixes and commas
-    cleaned = val.upper().replace("RS.", "").replace("RS", "").replace("INR", "").replace("₹", "").replace(",", "")
-    # Remove any remaining letters/symbols except digits, dot, and minus
-    cleaned = re.sub(r'[^\d\.-]', '', cleaned).strip()
-    try:
-        return float(cleaned) if cleaned else 0.0
-    except ValueError:
-        return 0.0
+        return response
+    except client.exceptions.UnsupportedDocumentException:
+        logger.warning(f"[TEXTRACT] Sync AnalyzeExpense rejected {s3_key} — trying async (multi-page PDF)")
+        return _analyze_expense_async(s3_key)
 
 
 def parse_textract_expense(raw_response: dict) -> dict:

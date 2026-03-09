@@ -74,6 +74,28 @@ def extract_state_from_gstin(gstin: str) -> str | None:
     return None
 
 
+def normalize_state_to_code(state_input: str | None) -> str | None:
+    """Convert state name or code to 2-digit state code.
+    Handles: '07' -> '07', 'Delhi' -> '07', 'New Delhi' -> '07'
+    """
+    if not state_input or not state_input.strip():
+        return None
+    val = state_input.strip()
+    # Already a 2-digit code
+    if len(val) == 2 and val.isdigit():
+        return val if val in INDIAN_STATE_CODES else None
+    # Try matching by name (case-insensitive, partial match)
+    val_lower = val.lower()
+    for code, name in INDIAN_STATE_CODES.items():
+        if name.lower() == val_lower:
+            return code
+    # Try partial/contains match (e.g. 'New Delhi' -> 'Delhi')
+    for code, name in INDIAN_STATE_CODES.items():
+        if val_lower in name.lower() or name.lower() in val_lower:
+            return code
+    return None
+
+
 def is_interstate(supplier_state: str | None, place_of_supply: str | None) -> bool:
     """Determine if transaction is inter-state (IGST) or intra-state (CGST+SGST)."""
     if not supplier_state or not place_of_supply:
@@ -108,39 +130,3 @@ def validate_gst_split(cgst: float, sgst: float, igst: float, is_interstate_txn:
         if abs(cgst - sgst) > 0.01:
             return {"valid": False, "message": f"CGST ({cgst}) should equal SGST ({sgst}) for intra-state"}
     return {"valid": True}
-
-
-def normalize_state_to_code(state_input: str | None) -> str | None:
-    """
-    Normalize state name or code to 2-digit state code.
-    
-    Args:
-        state_input: Can be state code ("27") or state name ("Maharashtra")
-    
-    Returns:
-        2-digit state code or None
-    
-    Examples:
-        "27" -> "27"
-        "Maharashtra" -> "27"
-        "maharashtra" -> "27"
-        "MAHARASHTRA" -> "27"
-    """
-    if not state_input:
-        return None
-    
-    state_input = str(state_input).strip()
-    
-    # If already a 2-digit code, return it
-    if len(state_input) == 2 and state_input.isdigit():
-        if state_input in INDIAN_STATE_CODES:
-            return state_input
-        return None
-    
-    # Try to find by state name (case-insensitive)
-    state_input_lower = state_input.lower()
-    for code, name in INDIAN_STATE_CODES.items():
-        if name.lower() == state_input_lower:
-            return code
-    
-    return None

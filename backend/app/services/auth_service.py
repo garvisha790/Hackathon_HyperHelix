@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse
+from seed.chart_of_accounts import seed_chart_of_accounts
 
 import hmac
 import hashlib
@@ -79,6 +80,10 @@ async def signup(db: AsyncSession, req: SignupRequest) -> TokenResponse:
     db.add(user)
     await db.flush()
     print(f"[SIGNUP] User created in DB: {user.email} (ID: {user.id}, cognito_sub: {cognito_sub})")
+
+    # Seed chart of accounts for the new tenant
+    await seed_chart_of_accounts(db, tenant.id)
+    print(f"[SIGNUP] Chart of accounts seeded for tenant {tenant.id}")
     
     # Commit the transaction before getting the token to avoid race condition
     # where /auth/me is called before the user is committed to the database
@@ -125,10 +130,37 @@ async def login(db: AsyncSession, req: LoginRequest) -> TokenResponse:
     )
     user = result.scalar_one_or_none()
     if not user:
-        print(f"[LOGIN] User not found in database for cognito_sub: {cognito_sub}")
-        raise ValueError("User not found in database")
-    
-    print(f"[LOGIN] User found in DB: {user.email} (ID: {user.id})")
+        print(f"[LOGIN] User not found in database for cognito_sub: {cognito_sub}, auto-provisioning...")
+        email = req.email
+        name = email.split("@")[0]
+        for attr in user_info.get("UserAttributes", []):
+            if attr["Name"] == "email":
+                email = attr["Value"]
+            elif attr["Name"] == "name":
+                name = attr["Value"]
+
+        tenant = Tenant(name=f"{name}'s Company", fy_start_month=4, tax_regime="new")
+        db.add(tenant)
+        await db.flush()
+
+        user = User(
+            tenant_id=tenant.id,
+            email=email,
+            name=name,
+            cognito_sub=cognito_sub,
+            role="owner",
+        )
+        db.add(user)
+        await db.flush()
+
+        # Seed chart of accounts for the new tenant
+        await seed_chart_of_accounts(db, tenant.id)
+        print(f"[LOGIN] Chart of accounts seeded for tenant {tenant.id}")
+
+        await db.commit()
+        print(f"[LOGIN] Auto-provisioned user: {email} (ID: {user.id}, tenant: {tenant.id})")
+    else:
+        print(f"[LOGIN] User found in DB: {user.email} (ID: {user.id})")
     return TokenResponse(
         access_token=access_token,
         refresh_token=auth_resp["AuthenticationResult"].get("RefreshToken"),

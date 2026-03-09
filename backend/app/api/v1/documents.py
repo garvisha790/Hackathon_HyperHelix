@@ -75,6 +75,23 @@ async def upload_document_file(
     s3_key = f"tenants/{tenant_id}/documents/{uuid.uuid4()}.{ext}"
     file_bytes = await file.read()
 
+    # Content-hash based duplicate check
+    import hashlib
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
+    dup_result = await db.execute(
+        select(Document).where(
+            Document.tenant_id == tenant_id,
+            Document.content_hash == content_hash,
+            Document.deleted_at.is_(None),
+        )
+    )
+    content_dup = dup_result.scalar_one_or_none()
+    if content_dup and not replace_document_id:
+        raise HTTPException(
+            409,
+            f"This exact file was already uploaded as '{content_dup.file_name}'. Delete it first or choose Replace."
+        )
+
     _log(f"[UPLOAD] Uploading {len(file_bytes)} bytes to S3 key={s3_key} ...")
     await asyncio.to_thread(upload_to_s3, s3_key, file_bytes, content_type)
     _log(f"[UPLOAD] S3 upload done: {s3_key} ({len(file_bytes)} bytes)")
@@ -87,6 +104,7 @@ async def upload_document_file(
         file_type=ext,
         document_type=document_type,
         status="UPLOADED",
+        content_hash=content_hash,
     )
     db.add(doc)
     await db.flush()
@@ -275,14 +293,55 @@ async def delete_document(
 
     doc.deleted_at = datetime.utcnow()
     
-    # Also clear the canonical invoice's duplicate_hash to allow re-upload without constraint violation
+    # Also soft-delete the canonical invoice and clear duplicate_hash
     from app.models.invoice import CanonicalInvoice
     ci_result = await db.execute(
         select(CanonicalInvoice).where(CanonicalInvoice.document_id == document_id)
     )
     canonical = ci_result.scalar_one_or_none()
+    invoice_date = None
     if canonical:
+        invoice_date = canonical.invoice_date
         canonical.duplicate_hash = None
+        canonical.deleted_at = datetime.utcnow()
     
+    # Also soft-delete related ledger transactions so they don't show in the ledger
+    from app.models.ledger import LedgerTransaction
+    txn_result = await db.execute(
+        select(LedgerTransaction).where(
+            LedgerTransaction.document_id == document_id,
+            LedgerTransaction.deleted_at.is_(None),
+        )
+    )
+    for txn in txn_result.scalars().all():
+        txn.deleted_at = datetime.utcnow()
+    
+    # Mark GST as stale so it gets recomputed without this invoice
+    if invoice_date:
+        from app.services.tax_service import mark_gst_stale
+        await mark_gst_stale(db, user.tenant_id, invoice_date)
+
+    # Recompute income tax estimate for the affected FY
+    try:
+        from app.services.tax_service import compute_income_tax_estimate
+        await compute_income_tax_estimate(db, user.tenant_id)
+    except Exception:
+        pass  # non-critical
+
     await log_action(db, user.tenant_id, user.id, "document.delete", "document", doc.id)
+
+    # Invalidate dashboard Redis cache
+    try:
+        redis = getattr(db, '_redis', None) or getattr(__import__('sys').modules.get('app.main', None), 'app', None)
+        # Simpler: just delete cache keys directly
+        import redis.asyncio as aioredis
+        from app.config import settings
+        r = await aioredis.from_url(settings.redis_url, decode_responses=True)
+        keys = await r.keys(f"dashboard:{user.tenant_id}:*")
+        if keys:
+            await r.delete(*keys)
+        await r.close()
+    except Exception:
+        pass
+
     return {"status": "deleted"}

@@ -7,6 +7,7 @@ import uuid
 import logging
 import traceback
 from pathlib import Path
+import re
 from datetime import date, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,10 +15,11 @@ from app.models.document import Document
 from app.models.extraction import Extraction
 from app.models.validation import Validation
 from app.models.invoice import CanonicalInvoice
+from app.models.tenant import Tenant
 from app.services.textract_service import analyze_expense, parse_textract_expense
-from app.services.bedrock_service import validate_invoice_fields, generate_ai_review
+from app.services.bedrock_service import validate_invoice_fields, generate_ai_review, classify_document
 from app.utils.gst_validator import (
-    validate_gstin, extract_state_from_gstin, is_interstate, normalize_state_to_code,
+    validate_gstin, extract_state_from_gstin, is_interstate,
     validate_total_consistency, validate_gst_split,
 )
 from app.services.posting_engine import post_invoice
@@ -140,21 +142,50 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
 
         await _set_status(db, doc, "VALIDATED")
 
+        # Step 2.8: Classify document (purchase vs sale vs credit note etc.)
+        _log("[PIPELINE]   2.8 Classifying document type...")
+        tenant = await db.get(Tenant, tenant_id)
+        tenant_gstin = tenant.gstin if tenant else None
+        try:
+            classification = await asyncio.to_thread(classify_document, structured, tenant_gstin, raw_response)
+        except Exception as cls_err:
+            _log(f"[PIPELINE]   2.8 Classification failed, defaulting to purchase: {cls_err}")
+            classification = {"transaction_nature": "purchase", "document_type": "invoice", "confidence": 0.3, "method": "fallback"}
+        _log(f"[PIPELINE]   2.8 Classification: nature={classification['transaction_nature']}, "
+             f"doc_type={classification['document_type']}, confidence={classification['confidence']}, "
+             f"method={classification['method']}")
+
+        classified_nature = classification["transaction_nature"]
+        classified_doc_type = classification.get("document_type", "invoice")
+        # Always trust AI classification for document_type when confidence is reasonable
+        effective_doc_type = classified_doc_type if classification['confidence'] >= 0.4 else doc.document_type
+        _log(f"[PIPELINE]   2.8 Effective doc_type={effective_doc_type} (AI={classified_doc_type}, upload={doc.document_type})")
+
         # Step 3: Create canonical invoice
         _log("[PIPELINE]   3/3 Creating canonical invoice...")
+        from app.utils.gst_validator import normalize_state_to_code
         vendor_state = extract_state_from_gstin(structured.get("vendor_gstin"))
         buyer_state = extract_state_from_gstin(structured.get("buyer_gstin"))
-        
-        # Normalize place_of_supply to 2-digit state code
         pos_raw = structured.get("place_of_supply") or buyer_state
         pos = normalize_state_to_code(pos_raw) if pos_raw else None
-        
-        # Also normalize state codes extracted from GSTINs
         vendor_state = normalize_state_to_code(vendor_state) if vendor_state else None
         buyer_state = normalize_state_to_code(buyer_state) if buyer_state else None
 
-        invoice_date = _parse_date(structured.get("invoice_date"))
+        raw_date_str = structured.get("invoice_date")
+        invoice_date = _parse_date(raw_date_str)
+        _log(f"[PIPELINE]   3/3 Date: raw='{raw_date_str}' -> parsed={invoice_date}")
         invoice_number = structured.get("invoice_number") or f"AUTO-{doc.id}"
+
+        # For debit/credit notes: use AI-detected document number if available
+        ai_doc_number = classification.get("document_number")
+        ai_original_ref = classification.get("original_invoice_ref")
+        if ai_doc_number and effective_doc_type in ("credit_note", "debit_note"):
+            _log(f"[PIPELINE]   3/3 AI detected doc number: {ai_doc_number} (OCR had: {invoice_number})")
+            # Store the OCR-extracted number as the original invoice reference
+            original_invoice_ref = ai_original_ref or invoice_number
+            invoice_number = ai_doc_number
+        else:
+            original_invoice_ref = ai_original_ref
 
         dup_hash = compute_duplicate_hash(
             tenant_id,
@@ -179,15 +210,32 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             existing_ci.invoice_number = invoice_number
             existing_ci.invoice_date = invoice_date
             existing_ci.vendor_name = structured.get("vendor_name")
+            existing_ci.vendor_gstin = structured.get("vendor_gstin")
+            existing_ci.vendor_state_code = vendor_state
+            existing_ci.buyer_name = structured.get("buyer_name")
+            existing_ci.buyer_gstin = structured.get("buyer_gstin")
+            existing_ci.buyer_state_code = buyer_state
+            existing_ci.place_of_supply = pos
+            existing_ci.subtotal = structured.get("subtotal", 0)
+            existing_ci.cgst = structured.get("cgst", 0)
+            existing_ci.sgst = structured.get("sgst", 0)
+            existing_ci.igst = structured.get("igst", 0)
+            existing_ci.cess = structured.get("cess", 0)
             existing_ci.total = structured.get("total", 0)
+            existing_ci.line_items = structured.get("line_items", [])
             existing_ci.validation_status = "VALID" if overall == "pass" else "PENDING"
+            existing_ci.transaction_nature = classified_nature
+            existing_ci.document_type = effective_doc_type
+            if original_invoice_ref:
+                existing_ci.original_invoice_number = original_invoice_ref
         elif existing:
             _log(f"[PIPELINE]   3/3 Duplicate hash already in DB (invoice {existing.id}), creating duplicate record")
             # Create a duplicate invoice record (is_duplicate=True, duplicate_hash=None to avoid constraint)
             canonical = CanonicalInvoice(
                 document_id=doc.id,
                 tenant_id=tenant_id,
-                document_type=doc.document_type,
+                document_type=effective_doc_type,
+                transaction_nature=classified_nature,
                 invoice_number=invoice_number,
                 invoice_date=invoice_date,
                 vendor_name=structured.get("vendor_name"),
@@ -214,7 +262,8 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             canonical = CanonicalInvoice(
                 document_id=doc.id,
                 tenant_id=tenant_id,
-                document_type=doc.document_type,
+                document_type=effective_doc_type,
+                transaction_nature=classified_nature,
                 invoice_number=invoice_number,
                 invoice_date=invoice_date,
                 vendor_name=structured.get("vendor_name"),
@@ -258,6 +307,19 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             _log(f"[PIPELINE]   4/4 Ledger posting failed (non-fatal): {type(post_err).__name__}: {post_err}")
 
         await _set_status(db, doc, "DONE")
+
+        # Invalidate dashboard Redis cache so new data shows instantly
+        try:
+            import redis.asyncio as aioredis
+            from app.config import settings
+            redis = await aioredis.from_url(settings.redis_url, decode_responses=True)
+            keys = await redis.keys(f"dashboard:{tenant_id}:*")
+            if keys:
+                await redis.delete(*keys)
+                _log(f"[PIPELINE]   Cache invalidated: {len(keys)} dashboard keys")
+            await redis.close()
+        except Exception:
+            pass  # Redis optional
 
 
         _log(
@@ -370,11 +432,47 @@ def _compute_overall_status(results: dict) -> str:
 
 
 def _parse_date(date_str: str | None) -> date:
+    logger = logging.getLogger("taxodo.pipeline")
     if not date_str:
+        logger.warning("[PARSE_DATE] No date string provided, using today")
         return date.today()
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y", "%m/%d/%Y"):
+
+    cleaned = date_str.strip()
+
+    # Try explicit strptime formats first (most common Indian/international)
+    for fmt in (
+        "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d %b %Y", "%d %B %Y",
+        "%m/%d/%Y", "%Y/%m/%d", "%d.%m.%Y", "%b %d, %Y", "%B %d, %Y",
+        "%d-%b-%Y", "%d-%B-%Y", "%d %b, %Y", "%d %B, %Y",
+        "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ",
+    ):
         try:
-            return datetime.strptime(date_str.strip(), fmt).date()
+            return datetime.strptime(cleaned, fmt).date()
         except ValueError:
             continue
+
+    # Fallback: python-dateutil (handles almost any format)
+    try:
+        from dateutil import parser as du_parser
+        parsed = du_parser.parse(cleaned, dayfirst=True).date()
+        logger.info(f"[PARSE_DATE] dateutil parsed '{cleaned}' -> {parsed}")
+        return parsed
+    except Exception:
+        pass
+
+    # Last resort: regex extract any date-like pattern
+    m = re.search(r'(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})', cleaned)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if d > 12:  # day-first
+            try:
+                return date(y, mo, d)
+            except ValueError:
+                pass
+        try:
+            return date(y, mo, d)
+        except ValueError:
+            pass
+
+    logger.warning(f"[PARSE_DATE] Could not parse '{cleaned}', using today")
     return date.today()

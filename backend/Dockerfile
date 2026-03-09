@@ -22,10 +22,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install runtime dependencies only
+# Install runtime dependencies only (includes reportlab image libs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    libfreetype6 \
+    libjpeg62-turbo \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder (installed globally)
@@ -35,8 +38,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY . .
 
-# Create non-root user for security
+# Create non-root user for security + writable log directory
 RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/logs && \
     chown -R appuser:appuser /app
 
 USER appuser
@@ -47,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 EXPOSE 8000
 
-# Production server with workers
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Run migrations then start server
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4

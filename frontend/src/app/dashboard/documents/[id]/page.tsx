@@ -23,13 +23,19 @@ export default function DocumentDetailPage() {
   const { data: doc } = useQuery({
     queryKey: ["document", docId],
     queryFn: () => api.get(`/documents/${docId}`).then((r) => r.data),
+    throwOnError: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return ["UPLOADED", "PROCESSING", "EXTRACTED"].includes(status) ? 3000 : false;
+    },
   });
 
   const { data: invoice, refetch: refetchInvoice } = useQuery({
     queryKey: ["invoice", docId],
-    queryFn: () => api.get(`/invoices/${docId}`).then((r) => r.data),
-    enabled: doc?.status === "DONE" || doc?.status === "VALIDATED" || doc?.status === "APPROVED",
+    queryFn: () => api.get(`/invoices/${docId}`).then((r) => r.data).catch(() => null),
+    enabled: doc?.status === "EXTRACTED" || doc?.status === "DONE" || doc?.status === "VALIDATED" || doc?.status === "APPROVED",
     retry: false,
+    throwOnError: false,
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -54,23 +60,26 @@ export default function DocumentDetailPage() {
 
   const { data: validation } = useQuery({
     queryKey: ["validation", docId],
-    queryFn: () => api.get(`/invoices/${docId}/validation`).then((r) => r.data),
+    queryFn: () => api.get(`/invoices/${docId}/validation`).then((r) => r.data).catch(() => null),
     enabled: !!invoice,
     retry: false,
+    throwOnError: false,
   });
 
   const { data: preview } = useQuery({
     queryKey: ["preview", docId],
-    queryFn: () => api.get(`/invoices/${docId}/download-url`).then((r) => r.data),
+    queryFn: () => api.get(`/invoices/${docId}/download-url`).then((r) => r.data).catch(() => null),
     enabled: !!doc,
     retry: false,
+    throwOnError: false,
   });
 
   const { data: extraction } = useQuery({
     queryKey: ["extraction", docId],
-    queryFn: () => api.get(`/invoices/${docId}/extraction`).then((r) => r.data),
+    queryFn: () => api.get(`/invoices/${docId}/extraction`).then((r) => r.data).catch(() => null),
     enabled: !!invoice,
     retry: false,
+    throwOnError: false,
   });
 
   const approveMutation = useMutation({
@@ -261,6 +270,17 @@ export default function DocumentDetailPage() {
               <div className="border-b border-taxodo-border bg-taxodo-surface/50 px-6 py-4 flex items-center justify-between">
                 <h2 className="text-base font-bold text-taxodo-ink flex items-center gap-2">
                   <FileText className="h-4 w-4 text-taxodo-primary" /> Invoice Details
+                  {invoice.transaction_nature && (
+                    <span className={cn(
+                      "ml-2 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide border",
+                      invoice.transaction_nature === "sale" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                      invoice.transaction_nature === "purchase" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                      invoice.transaction_nature === "bill_of_supply" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                      "bg-gray-50 text-gray-600 border-gray-200"
+                    )}>
+                      {invoice.transaction_nature === "bill_of_supply" ? "Bill of Supply" : invoice.transaction_nature}
+                    </span>
+                  )}
                 </h2>
                 <div className="flex items-center gap-3">
                   {validation?.overall_status === "fail" && !isEditing && !aiReviewMode && (
@@ -469,6 +489,8 @@ export default function DocumentDetailPage() {
                           <input
                             type="number"
                             step="0.01"
+                            title="Total Amount"
+                            placeholder="0.00"
                             value={editData.total}
                             onChange={(e) => setEditData({ ...editData, total: parseFloat(e.target.value) || 0 })}
                             className={cn("w-32 rounded-lg border-2 border-taxodo-primary/50 bg-white px-3 py-1.5 text-right font-bold focus:border-taxodo-primary focus:outline-none transition-all", reviewSuggestions.find((s: any) => s.field_name === "total") && "border-indigo-400 focus:border-indigo-500 shadow-[0_0_0_2px_rgba(99,102,241,0.2)]")}
@@ -603,8 +625,31 @@ export default function DocumentDetailPage() {
                     Our AI is currently reading the document to extract vendor details, line items, and taxes...
                   </p>
                 </>
+              ) : doc?.status === "EXTRACTED" ? (
+                <>
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 animate-ping rounded-full bg-amber-100"></div>
+                    <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+                      <Wand2 className="h-8 w-8 text-amber-500 animate-pulse" />
+                    </div>
+                  </div>
+                  <h3 className="mb-2 text-lg font-bold text-gray-900">Running AI Validation</h3>
+                  <p className="max-w-xs text-sm text-gray-500 leading-relaxed">
+                    Data extracted. AI is now validating GSTIN, amounts, and tax calculations...
+                  </p>
+                </>
+              ) : doc?.status === "FAILED" ? (
+                <>
+                  <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+                    <XCircle className="h-8 w-8 text-red-500" />
+                  </div>
+                  <h3 className="mb-2 text-lg font-bold text-gray-900">Processing Failed</h3>
+                  <p className="max-w-xs text-sm text-gray-500 leading-relaxed">
+                    Something went wrong. Use the Rescan button to try again.
+                  </p>
+                </>
               ) : (
-                <p className="text-gray-500">Document data unavailable.</p>
+                <p className="text-gray-500">Loading document data...</p>
               )}
             </div>
           )}
@@ -708,6 +753,8 @@ function EditableCurrencyField({ label, value, isEditing, onChange, hideIfZero, 
           <input
             type="number"
             step="0.01"
+            title={label}
+            placeholder="0.00"
             value={value || 0}
             onChange={(e) => onChange?.(parseFloat(e.target.value) || 0)}
             className={cn("w-32 rounded-lg border-2 border-taxodo-primary/50 bg-white px-3 py-1.5 text-right font-medium focus:border-taxodo-primary focus:outline-none transition-all", suggestion && "border-indigo-400 focus:border-indigo-500 shadow-[0_0_0_2px_rgba(99,102,241,0.2)]")}

@@ -22,8 +22,12 @@ class CanonicalInvoice(Base, TimestampMixin, SoftDeleteMixin):
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
     document_type: Mapped[str] = mapped_column(
-        SAEnum("invoice", "credit_note", "debit_note", "receipt", name="invoice_doc_type_enum"),
+        SAEnum("invoice", "credit_note", "debit_note", "receipt", "bill_of_supply", name="invoice_doc_type_enum", create_constraint=False, native_enum=True),
         default="invoice",
+    )
+    transaction_nature: Mapped[str | None] = mapped_column(
+        String(30), nullable=True, default=None,
+        comment="purchase | sale | bill_of_supply",
     )
 
     invoice_number: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -62,7 +62,7 @@ export default function CopilotPage() {
               {msg.role === "user" ? (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               ) : (
-                <div className="prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-code:text-indigo-600 prose-code:bg-indigo-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-800 prose-pre:text-gray-100 prose-a:text-taxodo-primary prose-li:text-gray-700">
+                <div className="copilot-markdown prose prose-sm max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-code:text-indigo-600 prose-code:bg-indigo-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-800 prose-pre:text-gray-100 prose-a:text-taxodo-primary prose-li:text-gray-700">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                 </div>
               )}
@@ -98,6 +98,7 @@ export default function CopilotPage() {
         <button
           onClick={handleSend}
           disabled={askMutation.isPending || !input.trim()}
+          title="Send message"
           className="rounded-xl bg-taxodo-primary px-5 py-3 text-white hover:bg-taxodo-primary-hover disabled:opacity-50 transition-colors"
         >
           <Send className="h-5 w-5" />

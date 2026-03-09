@@ -41,18 +41,7 @@ def compute_income_tax(taxable_income: float, regime: str = "new") -> dict:
     slabs = NEW_REGIME_SLABS if regime == "new" else OLD_REGIME_SLABS
     labels = _slab_labels_new() if regime == "new" else _slab_labels_old()
 
-    if regime == "new" and taxable_income <= SECTION_87A_LIMIT_NEW:
-        return {
-            "estimated_tax": 0,
-            "cess": 0,
-            "total_tax_liability": 0,
-            "slab_breakup": [
-                {"range": label, "rate": rate * 100, "tax": 0}
-                for label, (_, rate) in zip(labels, slabs)
-            ],
-            "note": "Section 87A rebate applied — zero tax for income up to Rs 12 lakh",
-        }
-
+    # Always compute slab breakup so users see the calculation
     remaining = taxable_income
     total_tax = 0
     breakup = []
@@ -71,10 +60,22 @@ def compute_income_tax(taxable_income: float, regime: str = "new") -> dict:
             break
 
     cess = round(total_tax * CESS_RATE, 2)
+    tax_before_rebate = round(total_tax + cess, 2)
+
+    # Section 87A rebate: zero tax for income up to Rs 12 lakh (new regime)
+    rebate = 0.0
+    note = None
+    if regime == "new" and taxable_income <= SECTION_87A_LIMIT_NEW:
+        rebate = tax_before_rebate
+        note = "Section 87A rebate applied — zero tax for income up to ₹12 lakh"
+
+    final_liability = round(tax_before_rebate - rebate, 2)
 
     return {
         "estimated_tax": round(total_tax, 2),
         "cess": cess,
-        "total_tax_liability": round(total_tax + cess, 2),
+        "rebate": rebate,
+        "total_tax_liability": final_liability,
         "slab_breakup": breakup,
+        "note": note,
     }

@@ -1,0 +1,112 @@
+{
+  "family": "taxodo-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::213857329904:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::213857329904:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "213857329904.dkr.ecr.ap-south-1.amazonaws.com/taxodo-backend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "APP_ENV",
+          "value": "production"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "ap-south-1"
+        },
+        {
+          "name": "TEXTRACT_REGION",
+          "value": "ap-south-1"
+        },
+        {
+          "name": "BEDROCK_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "BEDROCK_MODEL_ID",
+          "value": "anthropic.claude-haiku-4-5-20251001-v1:0"
+        },
+        {
+          "name": "COGNITO_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "value": "digitalca-document"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "value": "<YOUR_AWS_ACCESS_KEY_ID>"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "value": "<YOUR_AWS_SECRET_ACCESS_KEY>"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "value": "<YOUR_ANTHROPIC_API_KEY>"
+        },
+        {
+          "name": "CORS_ORIGINS",
+          "value": "*"
+        },
+        {
+          "name": "COGNITO_USER_POOL_ID",
+          "value": "us-east-1_GsZm81sqB"
+        },
+        {
+          "name": "COGNITO_APP_CLIENT_ID",
+          "value": "24g6qd0l677hjb72q6vmcnroq3"
+        },
+        {
+          "name": "COGNITO_APP_CLIENT_SECRET",
+          "value": "f0bhdu4gh5jc64989pkda418uo22tdlpidfssugvf5kn4r9rc4b"
+        },
+        {
+          "name": "SECRET_KEY",
+          "value": "7Kp9mN2xQ5vL8wR3tY6uI1oP4sD7fG0hJ2kM5nB8cV1xZ3wE6rT9yU2iO5pA8sD4"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql+asyncpg://postgres:TaxodoSecure2026!@taxodo-db.cpqc0wsgayje.ap-south-1.rds.amazonaws.com:5432/digitalca"
+        },
+        {
+          "name": "DATABASE_URL_SYNC",
+          "value": "postgresql+psycopg://postgres:TaxodoSecure2026!@taxodo-db.cpqc0wsgayje.ap-south-1.rds.amazonaws.com:5432/digitalca"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://taxodo-redis.ozq4u4.0001.aps1.cache.amazonaws.com:6379/0"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/taxodo-backend",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

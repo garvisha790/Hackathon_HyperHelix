@@ -19,6 +19,7 @@ class CanonicalInvoiceResponse(BaseModel):
     id: str
     document_id: str
     document_type: str
+    transaction_nature: Optional[str] = None
     invoice_number: str
     invoice_date: date
     vendor_name: Optional[str] = None

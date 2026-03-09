@@ -9,18 +9,25 @@ import redis.asyncio as aioredis
 from app.config import get_settings
 from app.api.router import api_router
 
-_LOG_FILE = Path(__file__).resolve().parent.parent / "pipeline.log"
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_LOG_FILE = _LOG_DIR / "pipeline.log"
 _fmt = logging.Formatter("%(asctime)s %(levelname)-8s [%(name)s] %(message)s", datefmt="%H:%M:%S")
-
-_file_handler = logging.FileHandler(str(_LOG_FILE), mode="a", encoding="utf-8")
-_file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(_fmt)
 
 _stream_handler = logging.StreamHandler(sys.stderr)
 _stream_handler.setLevel(logging.INFO)
 _stream_handler.setFormatter(_fmt)
 
-logging.basicConfig(level=logging.INFO, handlers=[_file_handler, _stream_handler], force=True)
+_handlers: list[logging.Handler] = [_stream_handler]
+try:
+    _file_handler = logging.FileHandler(str(_LOG_FILE), mode="a", encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(_fmt)
+    _handlers.append(_file_handler)
+except OSError:
+    pass  # Container may not have writable log dir; stderr is sufficient
+
+logging.basicConfig(level=logging.INFO, handlers=_handlers, force=True)
 logging.getLogger("app").setLevel(logging.DEBUG)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 

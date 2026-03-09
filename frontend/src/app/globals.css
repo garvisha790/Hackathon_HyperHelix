@@ -148,3 +148,87 @@ a {
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ── AI Copilot Markdown Tables & Formatting ── */
+.copilot-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.copilot-markdown thead {
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+}
+
+.copilot-markdown th {
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4338ca;
+  border-bottom: 2px solid #c7d2fe;
+  white-space: nowrap;
+}
+
+.copilot-markdown td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.copilot-markdown tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.copilot-markdown tbody tr:hover {
+  background-color: #eef2ff;
+}
+
+.copilot-markdown tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Bold amounts in tables */
+.copilot-markdown td:last-child,
+.copilot-markdown th:last-child {
+  text-align: right;
+}
+
+/* Horizontal rules */
+.copilot-markdown hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.75rem 0;
+}
+
+/* Blockquotes for insights/tips */
+.copilot-markdown blockquote {
+  border-left: 3px solid #6366f1;
+  background: #eef2ff;
+  padding: 8px 12px;
+  margin: 0.5rem 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: #4338ca;
+}
+
+/* Better list styling */
+.copilot-markdown ul {
+  padding-left: 1.2rem;
+  margin: 0.4rem 0;
+}
+
+.copilot-markdown li {
+  margin: 0.15rem 0;
+}
+
+.copilot-markdown li::marker {
+  color: #6366f1;
+}

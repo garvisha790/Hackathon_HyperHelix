@@ -208,6 +208,14 @@ def parse_textract_expense(raw_response: dict) -> dict:
                 else:
                     # Default generic tax to IGST if we can't determine
                     key = "igst"
+            elif field_type in ("OTHER", "AMOUNT", "AMOUNT_PAID", "AMOUNT_DUE"):
+                # Handle GST fields misclassified by Textract (e.g. "CGST Reversal" on credit notes)
+                if "CGST" in label_text:
+                    key = "cgst"
+                elif "SGST" in label_text:
+                    key = "sgst"
+                elif "IGST" in label_text:
+                    key = "igst"
 
             if key:
                 if key in ("subtotal", "total", "igst", "cgst", "sgst", "cess"):
@@ -298,5 +306,73 @@ def parse_textract_expense(raw_response: dict) -> dict:
 
                 if item["description"] or item["taxable_value"]:
                     structured["line_items"].append(item)
+
+    # ── Post-extraction: text-based GST fallback for credit/debit notes ──
+    # When Textract misses GST (returns 0), extract from raw LINE blocks
+    if structured["cgst"] == 0 and structured["sgst"] == 0 and structured["igst"] == 0:
+        all_text = ""
+        for doc in raw_response.get("ExpenseDocuments", []):
+            for block in doc.get("Blocks", []):
+                if block.get("BlockType") == "LINE":
+                    all_text += block.get("Text", "") + "\n"
+        # Extract standalone lines with tax labels and amounts
+        # Match patterns like "CGST Reversal  9000", "CGST 9%  9000", "CGST  4500"
+        # Captures the LAST number on the line (the amount), skipping rate percentages
+        for line in all_text.split("\n"):
+            line_upper = line.strip().upper()
+            if not line_upper:
+                continue
+            # Find all numbers on this line (excluding percentages)
+            amounts = re.findall(r'(?<!\d)(\d[\d,]*\.?\d*)(?!\s*%)', line)
+            if not amounts:
+                continue
+            # Use the last numeric value (typically the amount, not rate %)
+            amount_val = _parse_currency(amounts[-1])
+            if amount_val <= 0:
+                continue
+            if "CGST" in line_upper and "SGST" not in line_upper and "IGST" not in line_upper and structured["cgst"] == 0:
+                structured["cgst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found CGST={amount_val} from line: {line.strip()}")
+            elif "SGST" in line_upper and "CGST" not in line_upper and "IGST" not in line_upper and structured["sgst"] == 0:
+                structured["sgst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found SGST={amount_val} from line: {line.strip()}")
+            elif "IGST" in line_upper and "CGST" not in line_upper and "SGST" not in line_upper and structured["igst"] == 0:
+                structured["igst"] = amount_val
+                logger.info(f"[TEXTRACT] Text fallback found IGST={amount_val} from line: {line.strip()}")
+
+    # ── Post-extraction sanity checks ──
+    total = structured["total"]
+    subtotal = structured["subtotal"]
+    taxes = structured["cgst"] + structured["sgst"] + structured["igst"] + structured["cess"]
+
+    # 1. If we have total and taxes, derive correct subtotal
+    if total > 0 and taxes > 0:
+        computed_subtotal = round(total - taxes, 2)
+        if computed_subtotal > 0:
+            if subtotal == 0 or (subtotal < taxes and computed_subtotal > subtotal * 5):
+                logger.info(f"[TEXTRACT] Fixing subtotal: OCR={subtotal}, computed={computed_subtotal}")
+                structured["subtotal"] = computed_subtotal
+            elif abs(subtotal - total) < 0.01:
+                logger.info(f"[TEXTRACT] Fixing subtotal: was same as total ({subtotal}), computed={computed_subtotal}")
+                structured["subtotal"] = computed_subtotal
+
+    # 2. If subtotal is still 0, try line items
+    if structured["subtotal"] == 0 and total > 0:
+        line_sum = sum(li.get("taxable_value", 0) or li.get("rate", 0) * li.get("qty", 1)
+                       for li in structured["line_items"] if isinstance(li, dict))
+        if line_sum > 0:
+            structured["subtotal"] = round(line_sum, 2)
+            logger.info(f"[TEXTRACT] Subtotal from line items: {structured['subtotal']}")
+
+    # 3. If total is 0 but subtotal + taxes exist, compute total
+    if structured["total"] == 0 and structured["subtotal"] > 0:
+        structured["total"] = round(structured["subtotal"] + taxes, 2)
+        logger.info(f"[TEXTRACT] Computed total: {structured['total']}")
+
+    # 4. Last resort: if subtotal is still 0 and total > 0 and taxes == 0,
+    #    subtotal = total (bill of supply / no-GST scenario)
+    if structured["subtotal"] == 0 and structured["total"] > 0:
+        structured["subtotal"] = structured["total"]
+        logger.info(f"[TEXTRACT] Setting subtotal=total={structured['total']} (no taxes detected)")
 
     return structured

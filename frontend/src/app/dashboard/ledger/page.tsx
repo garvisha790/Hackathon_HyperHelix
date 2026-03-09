@@ -3,11 +3,12 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { formatCurrency, formatDate, statusColor, cn } from "@/lib/utils";
-import { Search, BookOpen, Trash2 } from "lucide-react";
+import { Search, BookOpen, Trash2, Download } from "lucide-react";
 
 export default function LedgerPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -31,6 +32,25 @@ export default function LedgerPage() {
 
   const txns = data?.transactions || [];
 
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const resp = await api.get("/ledger/export/pdf", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Ledger_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("PDF download failed", e);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 page-enter">
       <div className="section-intro">
@@ -38,6 +58,14 @@ export default function LedgerPage() {
           <h1 className="text-2xl font-bold text-taxodo-ink">Ledger</h1>
           <p className="section-subtitle">Double-entry journal transactions</p>
         </div>
+        <button
+          onClick={handleDownloadPdf}
+          disabled={downloading || txns.length === 0}
+          className="flex items-center gap-2 rounded-lg bg-taxodo-primary px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm hover:bg-taxodo-primary/90 transition-colors disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          {downloading ? "Generating..." : "Export PDF"}
+        </button>
       </div>
 
       {/* Filters */}

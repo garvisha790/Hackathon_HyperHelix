@@ -80,7 +80,6 @@ async def _get_aggregate_context(db: AsyncSession, tenant_id: uuid.UUID, questio
             LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id
         ).join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id).where(
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "revenue",
         )
     )
@@ -95,7 +94,6 @@ async def _get_aggregate_context(db: AsyncSession, tenant_id: uuid.UUID, questio
             LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id
         ).join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id).where(
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "expense",
         )
     )
@@ -114,7 +112,6 @@ async def _get_aggregate_context(db: AsyncSession, tenant_id: uuid.UUID, questio
             LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id
         ).join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id).where(
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.tally_group.in_(["Sundry Debtors", "Sundry Creditors"]),
         ).group_by(ChartOfAccounts.tally_group)
     )
@@ -145,7 +142,6 @@ async def _get_aggregate_context(db: AsyncSession, tenant_id: uuid.UUID, questio
             LedgerTransaction, JournalLine.transaction_id == LedgerTransaction.id
         ).join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id).where(
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "expense",
         ).group_by(LedgerTransaction.assigned_category)
     )
@@ -162,7 +158,6 @@ async def _get_document_context(db: AsyncSession, tenant_id: uuid.UUID, question
     result = await db.execute(
         select(CanonicalInvoice).where(
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         ).order_by(CanonicalInvoice.invoice_date.desc()).limit(20)
     )
     invoices = result.scalars().all()

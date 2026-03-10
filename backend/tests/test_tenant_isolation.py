@@ -49,12 +49,12 @@ async def test_tenant_a_cannot_see_tenant_b_documents(db: AsyncSession, two_tena
     tb = two_tenants["tenant_b"]
 
     result_a = await db.execute(
-        select(Document).where(Document.tenant_id == ta.id, Document.deleted_at.is_(None))
+        select(Document).where(Document.tenant_id == ta.id)
     )
     docs_a = result_a.scalars().all()
 
     result_b = await db.execute(
-        select(Document).where(Document.tenant_id == tb.id, Document.deleted_at.is_(None))
+        select(Document).where(Document.tenant_id == tb.id)
     )
     docs_b = result_b.scalars().all()
 

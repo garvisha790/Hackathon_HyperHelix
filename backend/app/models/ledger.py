@@ -8,10 +8,10 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from datetime import datetime
 from sqlalchemy import DateTime, func
 
-from app.database import Base, TimestampMixin, SoftDeleteMixin
+from app.database import Base, TimestampMixin
 
 
-class ChartOfAccounts(Base, SoftDeleteMixin):
+class ChartOfAccounts(Base):
     __tablename__ = "chart_of_accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -36,7 +36,7 @@ class ChartOfAccounts(Base, SoftDeleteMixin):
     parent = relationship("ChartOfAccounts", back_populates="children", remote_side=[id], lazy="noload")
 
 
-class LedgerTransaction(Base, TimestampMixin, SoftDeleteMixin):
+class LedgerTransaction(Base, TimestampMixin):
     __tablename__ = "ledger_transactions"
     __table_args__ = (
         Index("idx_ledger_tenant_date", "tenant_id", "transaction_date"),

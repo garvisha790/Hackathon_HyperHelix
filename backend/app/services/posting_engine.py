@@ -24,23 +24,25 @@ async def post_invoice(
     invoice: CanonicalInvoice,
     tenant_id: uuid.UUID,
 ) -> LedgerTransaction:
-    """Create ledger entries for an approved invoice."""
-    # Guard against duplicate ledger entries: physically delete old journal lines + soft-delete txns
+    """Create ledger entries for an approved invoice.
+
+    Uses a savepoint so that if journal-line creation fails (e.g. balance
+    check), the orphaned LedgerTransaction is rolled back automatically.
+    """
+    # Guard against duplicate ledger entries: physically delete old journal lines + txns
     existing = await db.execute(
         select(LedgerTransaction).where(
             LedgerTransaction.canonical_invoice_id == invoice.id,
-            LedgerTransaction.deleted_at.is_(None),
         )
     )
     for old_txn in existing.scalars().all():
         logger.info(f"[POST] Removing old ledger txn {old_txn.id} for invoice {invoice.id}")
-        # Delete orphaned journal lines first to keep the ledger clean
         old_lines = await db.execute(
             select(JournalLine).where(JournalLine.transaction_id == old_txn.id)
         )
         for old_line in old_lines.scalars().all():
             await db.delete(old_line)
-        old_txn.deleted_at = __import__('datetime').datetime.utcnow()
+        await db.delete(old_txn)
     await db.flush()
 
     accounts = await _get_system_accounts(db, tenant_id)
@@ -50,12 +52,14 @@ async def post_invoice(
 
     expense_account = await _resolve_expense_account(db, tenant_id, category_result.get("category"))
 
-    if invoice.document_type == "credit_note":
-        return await _post_credit_note(db, invoice, tenant_id, accounts, expense_account)
-    elif invoice.document_type == "debit_note":
-        return await _post_debit_note(db, invoice, tenant_id, accounts, expense_account)
-    else:
-        return await _post_standard_invoice(db, invoice, tenant_id, accounts, expense_account, category_result)
+    # Use a savepoint so a posting failure rolls back the txn + lines atomically
+    async with db.begin_nested():
+        if invoice.document_type == "credit_note":
+            return await _post_credit_note(db, invoice, tenant_id, accounts, expense_account)
+        elif invoice.document_type == "debit_note":
+            return await _post_debit_note(db, invoice, tenant_id, accounts, expense_account)
+        else:
+            return await _post_standard_invoice(db, invoice, tenant_id, accounts, expense_account, category_result)
 
 
 async def _post_standard_invoice(
@@ -301,7 +305,6 @@ async def _get_system_accounts(db: AsyncSession, tenant_id: uuid.UUID) -> dict:
         select(ChartOfAccounts).where(
             ChartOfAccounts.tenant_id == tenant_id,
             ChartOfAccounts.is_system.is_(True),
-            ChartOfAccounts.deleted_at.is_(None),
         )
     )
     accounts = result.scalars().all()
@@ -326,7 +329,6 @@ async def _resolve_expense_account(db: AsyncSession, tenant_id: uuid.UUID, categ
             select(ChartOfAccounts).where(
                 ChartOfAccounts.tenant_id == tenant_id,
                 ChartOfAccounts.name == category,
-                ChartOfAccounts.deleted_at.is_(None),
             )
         )
         account = result.scalar_one_or_none()
@@ -337,7 +339,6 @@ async def _resolve_expense_account(db: AsyncSession, tenant_id: uuid.UUID, categ
         select(ChartOfAccounts).where(
             ChartOfAccounts.tenant_id == tenant_id,
             ChartOfAccounts.code == "indirect_expenses",
-            ChartOfAccounts.deleted_at.is_(None),
         )
     )
     return result.scalar_one()

@@ -97,7 +97,7 @@ async def get_current_user(
              
         print(f"[AUTH] Looking up user with cognito_sub: {cognito_sub}")
         result = await db.execute(
-            select(User).options(selectinload(User.tenant)).where(User.cognito_sub == cognito_sub, User.deleted_at.is_(None))
+            select(User).options(selectinload(User.tenant)).where(User.cognito_sub == cognito_sub)
         )
         user = result.scalar_one_or_none()
         if not user:

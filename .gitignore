@@ -42,3 +42,8 @@ backend/alembic/versions/__pycache__/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# ECS task definitions (contain secrets)
+ecs-task-backend.json
+ecs-task-frontend.json
+ecs-task-trust-policy.json

@@ -3,10 +3,10 @@ from sqlalchemy import String, Integer, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
-from app.database import Base, TimestampMixin, SoftDeleteMixin
+from app.database import Base, TimestampMixin
 
 
-class Tenant(Base, TimestampMixin, SoftDeleteMixin):
+class Tenant(Base, TimestampMixin):
     __tablename__ = "tenants"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

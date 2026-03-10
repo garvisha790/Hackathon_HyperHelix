@@ -40,7 +40,6 @@ async def compute_gst_summary(
             ChartOfAccounts.tenant_id == tenant_id,
             ChartOfAccounts.tally_group == "Duties & Taxes",
             ChartOfAccounts.is_system.is_(True),
-            ChartOfAccounts.deleted_at.is_(None),
         )
     )
     accounts = {acc.code: acc for acc in gst_accounts.scalars().all()}
@@ -69,7 +68,6 @@ async def compute_gst_summary(
                 LedgerTransaction.tenant_id == tenant_id,
                 LedgerTransaction.transaction_date >= period_start,
                 LedgerTransaction.transaction_date <= period_end,
-                LedgerTransaction.deleted_at.is_(None),
             )
         )
         row = result.one()
@@ -155,9 +153,7 @@ async def compute_income_tax_estimate(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date >= fy_start,
             LedgerTransaction.transaction_date <= fy_end,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "revenue",
-            ChartOfAccounts.deleted_at.is_(None),
         )
     )
     rev_row = revenue_result.one()
@@ -177,10 +173,8 @@ async def compute_income_tax_estimate(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date >= fy_start,
             LedgerTransaction.transaction_date <= fy_end,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "expense",
             ChartOfAccounts.tally_group != "Duties & Taxes",
-            ChartOfAccounts.deleted_at.is_(None),
         )
     )
     exp_row = expense_result.one()

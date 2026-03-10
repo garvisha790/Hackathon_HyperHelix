@@ -42,7 +42,7 @@ async def get_dashboard_overview(
 
     doc_count = await db.execute(
         select(func.count(Document.id)).where(
-            Document.tenant_id == tenant_id, Document.deleted_at.is_(None)
+            Document.tenant_id == tenant_id
         )
     )
 
@@ -72,7 +72,7 @@ async def get_dashboard_overview(
 async def _get_pipeline_status(db: AsyncSession, tenant_id: uuid.UUID) -> PipelineStatus:
     result = await db.execute(
         select(Document.status, func.count(Document.id)).where(
-            Document.tenant_id == tenant_id, Document.deleted_at.is_(None)
+            Document.tenant_id == tenant_id
         ).group_by(Document.status)
     )
     counts = {row[0]: row[1] for row in result.all()}
@@ -98,7 +98,6 @@ async def _get_pnl(db: AsyncSession, tenant_id: uuid.UUID, start: date, end: dat
         .where(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "revenue",
         )
         .group_by("period")
@@ -116,7 +115,6 @@ async def _get_pnl(db: AsyncSession, tenant_id: uuid.UUID, start: date, end: dat
         .where(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "expense",
         )
         .group_by("period")
@@ -155,7 +153,6 @@ async def _get_expenses_by_category(
         .where(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.account_type == "expense",
         )
         .group_by(LedgerTransaction.assigned_category)
@@ -215,7 +212,6 @@ async def _get_cashflow(
         .where(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.tally_group.in_(["Sales Accounts"]),
         )
         .group_by("period")
@@ -235,7 +231,6 @@ async def _get_cashflow(
         .where(
             LedgerTransaction.tenant_id == tenant_id,
             LedgerTransaction.transaction_date.between(start, end),
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.tally_group.in_([
                 "Purchase Accounts", "Direct Expenses", "Indirect Expenses",
             ]),
@@ -271,7 +266,6 @@ async def _get_receivables_payables(
         .join(ChartOfAccounts, JournalLine.account_id == ChartOfAccounts.id)
         .where(
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
             ChartOfAccounts.tally_group.in_(["Sundry Debtors", "Sundry Creditors"]),
         )
         .group_by(ChartOfAccounts.tally_group)
@@ -295,7 +289,6 @@ async def _get_recent_invoices(
         select(CanonicalInvoice)
         .where(
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
         .order_by(CanonicalInvoice.created_at.desc())
         .limit(limit)

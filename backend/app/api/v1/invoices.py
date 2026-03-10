@@ -24,7 +24,6 @@ async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
     )
     invoice = result.scalar_one_or_none()
@@ -36,7 +35,6 @@ async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB
             select(Document).where(
                 Document.id == document_id,
                 Document.tenant_id == tenant_id,
-                Document.deleted_at.is_(None),
             )
         )
         doc = doc_result.scalar_one_or_none()
@@ -71,7 +69,6 @@ async def get_invoice(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB
                         CanonicalInvoice.tenant_id == tenant_id,
                         CanonicalInvoice.duplicate_hash == dup_hash,
                         CanonicalInvoice.is_duplicate.is_(False),
-                        CanonicalInvoice.deleted_at.is_(None),
                     )
                 )
                 invoice = original_result.scalar_one_or_none()
@@ -114,7 +111,6 @@ async def get_validation(document_id: uuid.UUID, tenant_id: TenantId = None, db:
             select(Document).where(
                 Document.id == document_id,
                 Document.tenant_id == tenant_id,
-                Document.deleted_at.is_(None),
             )
         )
         doc = doc_result.scalar_one_or_none()
@@ -144,7 +140,6 @@ async def get_validation(document_id: uuid.UUID, tenant_id: TenantId = None, db:
                         CanonicalInvoice.tenant_id == tenant_id,
                         CanonicalInvoice.duplicate_hash == dup_hash,
                         CanonicalInvoice.is_duplicate.is_(False),
-                        CanonicalInvoice.deleted_at.is_(None),
                     )
                 )
                 original_invoice = original_invoice_result.scalar_one_or_none()
@@ -179,7 +174,7 @@ async def get_validation(document_id: uuid.UUID, tenant_id: TenantId = None, db:
 async def get_download_url(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB = None):
     result = await db.execute(
         select(Document).where(
-            Document.id == document_id, Document.tenant_id == tenant_id, Document.deleted_at.is_(None)
+            Document.id == document_id, Document.tenant_id == tenant_id
         )
     )
     doc = result.scalar_one_or_none()
@@ -265,7 +260,6 @@ async def update_invoice(
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
     )
     invoice = result.scalar_one_or_none()
@@ -382,7 +376,6 @@ async def generate_invoice_ai_review(
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
     )
     invoice = inv_result.scalar_one_or_none()
@@ -462,7 +455,6 @@ async def approve_invoice(
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
     )
     invoice = result.scalar_one_or_none()
@@ -547,7 +539,6 @@ async def reject_invoice(
         select(CanonicalInvoice).where(
             CanonicalInvoice.document_id == document_id,
             CanonicalInvoice.tenant_id == tenant_id,
-            CanonicalInvoice.deleted_at.is_(None),
         )
     )
     invoice = result.scalar_one_or_none()

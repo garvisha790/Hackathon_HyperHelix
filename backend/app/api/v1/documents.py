@@ -60,13 +60,28 @@ async def upload_document_file(
                 select(Document).where(
                     Document.id == old_doc_id,
                     Document.tenant_id == tenant_id,
-                    Document.deleted_at.is_(None),
                 )
             )
             old_doc = result.scalar_one_or_none()
             if old_doc:
                 _log(f"[UPLOAD] Replacing document {old_doc_id} with new upload")
-                old_doc.deleted_at = datetime.utcnow()
+                # Hard delete old canonical invoice and ledger transactions
+                from app.models.invoice import CanonicalInvoice
+                from app.models.ledger import LedgerTransaction, JournalLine
+                ci_result = await db.execute(
+                    select(CanonicalInvoice).where(CanonicalInvoice.document_id == old_doc_id)
+                )
+                old_canonical = ci_result.scalar_one_or_none()
+                if old_canonical:
+                    txn_result = await db.execute(
+                        select(LedgerTransaction).where(LedgerTransaction.canonical_invoice_id == old_canonical.id)
+                    )
+                    for txn in txn_result.scalars().all():
+                        for line in txn.journal_lines:
+                            await db.delete(line)
+                        await db.delete(txn)
+                    await db.delete(old_canonical)
+                await db.delete(old_doc)
                 await log_action(db, tenant_id, user.id, "document.delete", "document", old_doc_id, 
                                {"reason": "replaced_by_new_upload"})
         except Exception as e:
@@ -82,7 +97,6 @@ async def upload_document_file(
         select(Document).where(
             Document.tenant_id == tenant_id,
             Document.content_hash == content_hash,
-            Document.deleted_at.is_(None),
         )
     )
     content_dup = dup_result.scalar_one_or_none()
@@ -173,7 +187,6 @@ async def check_duplicate_by_filename(
         select(Document).where(
             Document.tenant_id == tenant_id,
             Document.file_name == file_name,
-            Document.deleted_at.is_(None),
         ).order_by(Document.created_at.desc())
     )
     existing = result.scalar_one_or_none()
@@ -204,7 +217,6 @@ async def trigger_processing(
         select(Document).where(
             Document.id == document_id,
             Document.tenant_id == tenant_id,
-            Document.deleted_at.is_(None),
         )
     )
     doc = result.scalar_one_or_none()
@@ -231,8 +243,8 @@ async def list_documents(
     tenant_id: TenantId = None,
     db: DB = None,
 ):
-    query = select(Document).where(Document.tenant_id == tenant_id, Document.deleted_at.is_(None))
-    count_query = select(func.count(Document.id)).where(Document.tenant_id == tenant_id, Document.deleted_at.is_(None))
+    query = select(Document).where(Document.tenant_id == tenant_id)
+    count_query = select(func.count(Document.id)).where(Document.tenant_id == tenant_id)
 
     if status:
         query = query.where(Document.status == status)
@@ -262,7 +274,7 @@ async def list_documents(
 async def get_document(document_id: uuid.UUID, tenant_id: TenantId = None, db: DB = None):
     result = await db.execute(
         select(Document).where(
-            Document.id == document_id, Document.tenant_id == tenant_id, Document.deleted_at.is_(None)
+            Document.id == document_id, Document.tenant_id == tenant_id
         )
     )
     doc = result.scalar_one_or_none()
@@ -284,16 +296,27 @@ async def delete_document(
 ):
     result = await db.execute(
         select(Document).where(
-            Document.id == document_id, Document.tenant_id == user.tenant_id, Document.deleted_at.is_(None)
+            Document.id == document_id, Document.tenant_id == user.tenant_id
         )
     )
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "Document not found")
 
-    doc.deleted_at = datetime.utcnow()
-    
-    # Also soft-delete the canonical invoice and clear duplicate_hash
+    # Hard delete related ledger transactions and their journal lines FIRST
+    # (ledger_transactions has FK to canonical_invoices, so must go first)
+    from app.models.ledger import LedgerTransaction, JournalLine
+    txn_result = await db.execute(
+        select(LedgerTransaction).where(
+            LedgerTransaction.document_id == document_id,
+        )
+    )
+    for txn in txn_result.scalars().all():
+        for line in txn.journal_lines:
+            await db.delete(line)
+        await db.delete(txn)
+
+    # Now safe to delete the canonical invoice
     from app.models.invoice import CanonicalInvoice
     ci_result = await db.execute(
         select(CanonicalInvoice).where(CanonicalInvoice.document_id == document_id)
@@ -302,19 +325,24 @@ async def delete_document(
     invoice_date = None
     if canonical:
         invoice_date = canonical.invoice_date
-        canonical.duplicate_hash = None
-        canonical.deleted_at = datetime.utcnow()
-    
-    # Also soft-delete related ledger transactions so they don't show in the ledger
-    from app.models.ledger import LedgerTransaction
-    txn_result = await db.execute(
-        select(LedgerTransaction).where(
-            LedgerTransaction.document_id == document_id,
-            LedgerTransaction.deleted_at.is_(None),
-        )
+        await db.delete(canonical)
+
+    # Hard delete related extractions and validations
+    from app.models.extraction import Extraction
+    from app.models.validation import Validation
+    val_result = await db.execute(
+        select(Validation).where(Validation.document_id == document_id)
     )
-    for txn in txn_result.scalars().all():
-        txn.deleted_at = datetime.utcnow()
+    for val in val_result.scalars().all():
+        await db.delete(val)
+    ext_result = await db.execute(
+        select(Extraction).where(Extraction.document_id == document_id)
+    )
+    for ext in ext_result.scalars().all():
+        await db.delete(ext)
+
+    # Hard delete the document itself
+    await db.delete(doc)
     
     # Mark GST as stale so it gets recomputed without this invoice
     if invoice_date:

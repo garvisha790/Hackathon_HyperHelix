@@ -26,7 +26,6 @@ async def get_chart_of_accounts(tenant_id: TenantId = None, db: DB = None):
         select(ChartOfAccounts).where(
             ChartOfAccounts.tenant_id == tenant_id,
             ChartOfAccounts.parent_id.is_(None),
-            ChartOfAccounts.deleted_at.is_(None),
         ).order_by(ChartOfAccounts.code)
     )
     roots = result.scalars().all()
@@ -47,11 +46,9 @@ async def list_transactions(
 ):
     query = select(LedgerTransaction).where(
         LedgerTransaction.tenant_id == tenant_id,
-        LedgerTransaction.deleted_at.is_(None),
     )
     count_q = select(func.count(LedgerTransaction.id)).where(
         LedgerTransaction.tenant_id == tenant_id,
-        LedgerTransaction.deleted_at.is_(None),
     )
 
     if status:
@@ -86,7 +83,6 @@ async def get_transaction(txn_id: uuid.UUID, tenant_id: TenantId = None, db: DB 
         select(LedgerTransaction).where(
             LedgerTransaction.id == txn_id,
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
         )
     )
     txn = result.scalar_one_or_none()
@@ -107,7 +103,6 @@ async def edit_transaction(
         select(LedgerTransaction).where(
             LedgerTransaction.id == txn_id,
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
         )
     )
     txn = result.scalar_one_or_none()
@@ -156,7 +151,6 @@ async def recompute_transaction(
         select(LedgerTransaction).where(
             LedgerTransaction.id == txn_id,
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
         )
     )
     txn = result.scalar_one_or_none()
@@ -196,7 +190,6 @@ async def delete_transaction(
         select(LedgerTransaction).where(
             LedgerTransaction.id == txn_id,
             LedgerTransaction.tenant_id == tenant_id,
-            LedgerTransaction.deleted_at.is_(None),
         )
     )
     txn = result.scalar_one_or_none()
@@ -251,7 +244,7 @@ def _build_account_tree(acc: ChartOfAccounts) -> AccountTreeResponse:
         tally_group=acc.tally_group,
         is_system=acc.is_system,
         is_cash_or_bank=acc.is_cash_or_bank,
-        children=[_build_account_tree(child) for child in (acc.children or []) if not child.deleted_at],
+        children=[_build_account_tree(child) for child in (acc.children or [])],
     )
 
 
@@ -269,7 +262,6 @@ async def export_ledger_pdf(
 
     query = select(LedgerTransaction).where(
         LedgerTransaction.tenant_id == tenant_id,
-        LedgerTransaction.deleted_at.is_(None),
     )
     parsed_from = None
     parsed_to = None

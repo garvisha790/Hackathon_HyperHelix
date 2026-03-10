@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 from datetime import date, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.models.document import Document
 from app.models.extraction import Extraction
@@ -79,6 +80,16 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
             f"fields={len(structured.get('raw_fields', {}))}, "
             f"line_items={len(structured.get('line_items', []))}"
         )
+
+        # Remove old extractions/validations so re-processing doesn't create duplicates
+        from app.models.validation import Validation as ValModel
+        old_vals = await db.execute(select(ValModel).where(ValModel.document_id == doc.id))
+        for v in old_vals.scalars().all():
+            await db.delete(v)
+        old_exts = await db.execute(select(Extraction).where(Extraction.document_id == doc.id))
+        for e in old_exts.scalars().all():
+            await db.delete(e)
+        await db.flush()
 
         extraction = Extraction(
             document_id=doc.id,
@@ -286,7 +297,45 @@ async def process_document(db: AsyncSession, document_id: uuid.UUID, tenant_id: 
                 validation_status="VALID" if overall == "pass" else "PENDING",
             )
             db.add(canonical)
-        await db.flush()
+
+        try:
+            await db.flush()
+        except Exception as flush_err:
+            if "duplicate" in str(flush_err).lower() and "duplicate_hash" in str(flush_err).lower():
+                _log(f"[PIPELINE]   3/3 Duplicate hash constraint hit, retrying as duplicate record")
+                await db.rollback()
+                # Re-fetch the document after rollback
+                doc = await db.get(Document, document_id)
+                canonical = CanonicalInvoice(
+                    document_id=doc.id,
+                    tenant_id=tenant_id,
+                    document_type=effective_doc_type,
+                    transaction_nature=classified_nature,
+                    invoice_number=invoice_number,
+                    invoice_date=invoice_date,
+                    vendor_name=structured.get("vendor_name"),
+                    vendor_gstin=structured.get("vendor_gstin"),
+                    vendor_state_code=vendor_state,
+                    buyer_name=structured.get("buyer_name"),
+                    buyer_gstin=structured.get("buyer_gstin"),
+                    buyer_state_code=buyer_state,
+                    place_of_supply=pos,
+                    subtotal=structured.get("subtotal", 0),
+                    cgst=structured.get("cgst", 0),
+                    sgst=structured.get("sgst", 0),
+                    igst=structured.get("igst", 0),
+                    cess=structured.get("cess", 0),
+                    total=structured.get("total", 0),
+                    line_items=structured.get("line_items", []),
+                    is_duplicate=True,
+                    duplicate_of=None,
+                    duplicate_hash=None,
+                    validation_status="VALID" if overall == "pass" else "PENDING",
+                )
+                db.add(canonical)
+                await db.flush()
+            else:
+                raise
 
         # Step 4: Post to Ledger (create LedgerTransaction + JournalLines)
         _log("[PIPELINE]   4/4 Posting to ledger...")

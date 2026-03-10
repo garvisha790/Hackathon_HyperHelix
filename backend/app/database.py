@@ -32,16 +32,6 @@ class TimestampMixin:
     )
 
 
-class SoftDeleteMixin:
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None, index=True
-    )
-
-    @property
-    def is_deleted(self) -> bool:
-        return self.deleted_at is not None
-
-
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         try:

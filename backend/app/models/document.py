@@ -3,13 +3,13 @@ from sqlalchemy import String, ForeignKey, Enum as SAEnum, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
-from app.database import Base, TimestampMixin, SoftDeleteMixin
+from app.database import Base, TimestampMixin
 
 DOCUMENT_STATUSES = ("UPLOADED", "PROCESSING", "EXTRACTED", "VALIDATED", "FAILED", "DONE")
 DOCUMENT_TYPES = ("invoice", "credit_note", "debit_note", "receipt")
 
 
-class Document(Base, TimestampMixin, SoftDeleteMixin):
+class Document(Base, TimestampMixin):
     __tablename__ = "documents"
     __table_args__ = (
         Index("idx_documents_tenant_status", "tenant_id", "status"),
@@ -32,6 +32,6 @@ class Document(Base, TimestampMixin, SoftDeleteMixin):
 
     tenant = relationship("Tenant", back_populates="documents")
     uploader = relationship("User", lazy="selectin")
-    extraction = relationship("Extraction", back_populates="document", uselist=False, lazy="selectin")
-    validations = relationship("Validation", back_populates="document", lazy="noload")
-    canonical_invoice = relationship("CanonicalInvoice", back_populates="document", uselist=False, lazy="noload")
+    extraction = relationship("Extraction", back_populates="document", uselist=False, lazy="selectin", cascade="all, delete-orphan")
+    validations = relationship("Validation", back_populates="document", lazy="noload", cascade="all, delete-orphan")
+    canonical_invoice = relationship("CanonicalInvoice", back_populates="document", uselist=False, lazy="noload", cascade="all, delete-orphan")

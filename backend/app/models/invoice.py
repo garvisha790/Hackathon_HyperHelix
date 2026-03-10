@@ -6,12 +6,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
-from app.database import Base, TimestampMixin, SoftDeleteMixin
+from app.database import Base, TimestampMixin
 
 INVOICE_VALIDATION_STATUSES = ("PENDING", "VALID", "INVALID", "APPROVED", "REJECTED")
 
 
-class CanonicalInvoice(Base, TimestampMixin, SoftDeleteMixin):
+class CanonicalInvoice(Base, TimestampMixin):
     __tablename__ = "canonical_invoices"
     __table_args__ = (
         Index("idx_invoices_tenant_date", "tenant_id", "invoice_date"),

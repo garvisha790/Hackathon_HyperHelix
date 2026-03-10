@@ -126,7 +126,7 @@ async def login(db: AsyncSession, req: LoginRequest) -> TokenResponse:
     print(f"[LOGIN] Retrieved cognito_sub from token: {cognito_sub}")
 
     result = await db.execute(
-        select(User).where(User.cognito_sub == cognito_sub, User.deleted_at.is_(None))
+        select(User).where(User.cognito_sub == cognito_sub)
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -173,7 +173,7 @@ async def login(db: AsyncSession, req: LoginRequest) -> TokenResponse:
 async def dev_login(db: AsyncSession, email: str) -> TokenResponse:
     """Development-only login that bypasses Cognito."""
     result = await db.execute(
-        select(User).where(User.email == email, User.deleted_at.is_(None))
+        select(User).where(User.email == email)
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -217,7 +217,7 @@ async def refresh_access_token(db: AsyncSession, refresh_token: str) -> TokenRes
 
     # Find user in database
     result = await db.execute(
-        select(User).where(User.cognito_sub == cognito_sub, User.deleted_at.is_(None))
+        select(User).where(User.cognito_sub == cognito_sub)
     )
     user = result.scalar_one_or_none()
     if not user:
